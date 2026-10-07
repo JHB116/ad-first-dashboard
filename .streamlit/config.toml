@@ -1,0 +1,6 @@
+[server]
+# 큰 로우 xlsb 를 올릴 수 있게 (MB)
+maxUploadSize = 500
+
+[browser]
+gatherUsageStats = false

@@ -1,0 +1,14 @@
+# 실적 원천 · 빌드 결과 · 백업 · 실제 수치 검증 파일은 올리지 않는다
+data/
+backup/
+*.xlsb
+*.xlsx
+*.xls
+*.csv
+*.json.gz
+*.pkl
+tests/local/
+__pycache__/
+.pytest_cache/
+screenshot_*.png
+.claude/
