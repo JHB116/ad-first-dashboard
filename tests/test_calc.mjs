@@ -109,6 +109,34 @@ test('드릴다운 트리: 하위 합 = 상위 (브랜드/기획전 · 디바이
   near(C.children(t, '', 0).reduce((a, k) => a + k.s[1].join, 0), t.total[1].join, 1e-6);
 });
 
+test('데이터 없음: 2024년 원천에 없는 지표는 0 이 아니라 값 없음', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adsample24-'));
+  const py = process.env.PYTHON || 'python3';
+  execFileSync(py, [path.join(ROOT, 'tests/make_sample.py'), dir], { stdio: 'ignore' });
+  const code = `import sys, json; sys.path.insert(0, ${JSON.stringify(ROOT)}); import build_data as bd
+from pathlib import Path
+d = Path(${JSON.stringify(dir)})
+p = bd.build([d/'sample_row_2024.pkl', d/'sample_row.pkl'])
+open(d/'b.json', 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
+  execFileSync(py, ['-c', code], { stdio: 'ignore' });
+  const R2 = C.prepare(JSON.parse(fs.readFileSync(path.join(dir, 'b.json'), 'utf8')).row, C.ROW_METS);
+  const tot = C.daily(R2).get('_');
+  const ps = C.periods(R2, 'month');
+  const m24 = ps.find(p => p.key === '2024-09'), m25 = ps.find(p => p.key === '2025-09');
+  // 2024: 신규구매자 없음, 첫구매 · 구매고객은 있음
+  assert.equal(C.value(C.METRIC.nb, C.sumIdx(tot, m24.idx, ['nb']), m24.idx.length, 'avg'), null);
+  assert.ok(C.value(C.METRIC.fp, C.sumIdx(tot, m24.idx, ['fp']), m24.idx.length, 'avg') > 0);
+  assert.ok(C.value(C.METRIC.fps, C.sumIdx(tot, m24.idx, ['fp', 'buy']), m24.idx.length, 'avg') > 0);
+  // 2025 신규구매자의 전년비는 계산하지 않는다 (-100% 가 아니라 –)
+  const v25 = C.value(C.METRIC.nb, C.sumIdx(tot, m25.idx, ['nb']), m25.idx.length, 'avg');
+  const yoy = C.compareIdx(R2, m25, 'month', 'yoy');
+  assert.ok(v25 > 0);
+  assert.equal(C.pct(v25, C.value(C.METRIC.nb, C.sumIdx(tot, yoy, ['nb']), yoy.length, 'avg')), null);
+  // 트리도 같은 규칙
+  const t = C.tree(R2, { dims: ['t'], sets: [m25.idx, yoy], mets: ['nb', 'fp'] });
+  assert.ok(Number.isNaN(t.total[1].nb)); assert.ok(t.total[1].fp > 0); assert.ok(t.total[0].nb > 0);
+});
+
 test('표기 규칙', () => {
   assert.equal(C.fmt('money', 12_300_000), '12.3');
   assert.equal(C.fmt('money', 50_000), '5.0만');

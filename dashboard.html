@@ -216,7 +216,6 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
       <span class="field">베이스라인 <input type="date" id="dgB0"> ~ <input type="date" id="dgB1"></span>
       <span class="field">최근 <input type="date" id="dgR0"> ~ <input type="date" id="dgR1"></span>
       <label class="field">계절 비교 연도 <select id="dgRefY"></select></label>
-      <label class="field"><input type="checkbox" id="dgDropLast"> 최신일 제외</label>
       <button class="lnk" id="dgReset" type="button">기본값</button>
       <button class="filt-tg" id="btnFilt2" type="button" aria-expanded="false" aria-controls="filtRows"><span class="filt-ic" aria-hidden="true">▸</span>필터<b id="filtN2" hidden></b><span class="filt-sum" id="filtSum2"></span></button>
     </div>
@@ -253,7 +252,7 @@ const DEF = {
   types: null, srcs: null, hidden: {}, filtOpen: false,
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'cost' },
   da: { metric: 'join', media: null, kakao: true },
-  diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dropLast: false, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
+  diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
 };
 let S = load();
 let P = null, R = null;  // 백업 · 로우 데이터셋
@@ -507,6 +506,13 @@ function renderTrend(main) {
     }).join('')}</tbody>`;
   }
 }
+const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규구매자', nrev: '신규거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
+// 원천에 컬럼이 없어 '데이터 없음'으로 둔 지표 · 기간
+function naNote() {
+  const na = (P.source.row || {}).na || {};
+  const items = Object.entries(na).map(([m, v]) => `${MET_NAME[m] || m} ${ymd(v.from)}~${ymd(v.to)}(${v.days}일)`);
+  return items.length ? `<li><b>데이터 없음</b>(원천에 컬럼이 없던 기간 — 그 기간이 낀 값은 '–'): ${esc(items.join(' · '))}</li>` : '';
+}
 function notesTrend() {
   const src = P.source.row || {}, un = src.unclassified || {};
   return `<section><div class="sec-h"><h2>집계 기준</h2><span class="desc">출처 일일보고서 로우 시트 · ${esc(src.file || '')}</span></div><div class="card pad"><ul class="notes">
@@ -518,6 +524,7 @@ function notesTrend() {
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
     <li>비교: 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
     <li>세로 점선: 2026-07-01 20% 앱전용 쿠폰 발행 · 2026-08-01 5,000원 웰컴백 쿠폰 앱전용 변경 (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)</li>
+    ${naNote()}
     <li>원천 이상치: 쇼핑검색광고 가입 25.08 — 트래킹 공백 추정(급감 구간)</li>
   </ul></div></section>`;
 }
@@ -669,12 +676,8 @@ function renderDA(main) {
 // 4. 첫구매 진단 (로우 기준 — 구매고객 · 첫구매 · 비중 · UV · 전환율)
 // ════════════════════════════════════════════════════════════════════
 const DIAG_DIMS = ['t', 'ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev'];
-function dgValid() {
-  const v = new Uint8Array(R.dates.length).fill(1);
-  if (S.diag.dropLast) v[R.dates.length - 1] = 0;
-  return v;
-}
-function dgLastOk() { return R.dates[R.dates.length - 1 - (S.diag.dropLast ? 1 : 0)]; }
+function dgValid() { return null; }   // 모든 날짜 사용
+function dgLastOk() { return R.dates[R.dates.length - 1]; }
 function dgYears() { return [...new Set(R.dates.map(d => +d.slice(0, 4)))]; }
 function dgWhere() { return { ...(srcWhere() || {}), t: new Set(selTypes()) }; }
 function dgRanges() {
@@ -718,11 +721,11 @@ function renderDiag(main) {
   const years = Object.entries(R.dates.reduce((a, d) => { const y = d.slice(0, 4); a[y] = (a[y] || 0) + 1; return a; }, {}));
   let h = `<section><div class="sec-h"><h2>원천 · 구간</h2><span class="desc">로우 시트 · ${esc(src.file || '')}</span></div>
     <div class="card pad${hasRef ? '' : ' warn'}"><ul class="notes">
-    <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')} · 최신일 ${S.diag.dropLast ? '<b>제외 중</b>' : '포함'}</li>
+    <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')}</li>
     <li>베이스라인 ${ymd(F.b0)}~${ymd(F.b1)} ${compo(rg.base)} → 최근 ${ymd(F.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
     <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
       : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절 기대치를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
-    <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li></ul></div></section>`;
+    <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}</ul></div></section>`;
 
   const judge = (k, nm) => {
     const r = rows[k], kind = k === 'share' || k === 'cr' ? 'ratio' : 'count';
@@ -778,7 +781,7 @@ function renderDiag(main) {
       <li>구매고객 = 총결제고객수 · 첫구매 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매 전환율 = 첫구매 ÷ UV(전체)</li>
       <li>"개선 없음" ≠ "유지": 계절 기대치를 못 넘으면 "기대치 대비 -x%", 비중이 내려가면 악화로 판정</li>
       <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
-      <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시. 부분월 제외 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
+      <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
   main.innerHTML = h;
 
   renderDgMonthly(rg, series);
@@ -926,7 +929,6 @@ function syncBar() {
     const ys = dgYears().filter(y => y !== +F.r0.slice(0, 4));
     if (!ys.includes(F.refY) && ys.length) F.refY = ys.includes(+F.r0.slice(0, 4) - 1) ? +F.r0.slice(0, 4) - 1 : ys[ys.length - 1];
     $id('dgRefY').innerHTML = (ys.length ? ys : [F.refY]).map(y => `<option${y === F.refY ? ' selected' : ''}>${y}</option>`).join('');
-    $id('dgDropLast').checked = F.dropLast;
   }
 }
 let scrollKeep = null;
@@ -984,7 +986,6 @@ document.addEventListener('change', e => {
   else if (t.id === 'daKakao') { S.da.kakao = t.checked; render(true); }
   else if (['dgB0', 'dgB1', 'dgR0', 'dgR1'].includes(t.id)) { if (t.value) { S.diag[t.id.slice(2).toLowerCase()] = t.value; render(true); } }
   else if (t.id === 'dgRefY') { S.diag.refY = +t.value; render(true); }
-  else if (t.id === 'dgDropLast') { S.diag.dropLast = t.checked; render(true); }
   else if (t.dataset.dgdim != null) { const L = +t.dataset.dgdim, d = S.diag.dims.slice(); if (t.value) d[L] = t.value; else d.length = L; S.diag.dims = d.filter((x, i) => x && d.indexOf(x) === i); S.diag.open = []; render(true); }
   else if (t.id === 'dgCompType') { S.diag.compType = t.value; render(true); }
   else if (t.id === 'dgCompDim') { S.diag.compDim = t.value; render(true); }

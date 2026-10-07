@@ -184,6 +184,11 @@ def prep_row(raw: pd.DataFrame) -> pd.DataFrame:
     return df[df['date'].notna()].reset_index(drop=True)
 
 
+def missing_metrics(raw: pd.DataFrame) -> list[str]:
+    """원천에 컬럼이 없는(값이 전부 빈칸인) 지표 키 — 0 이 아니라 '데이터 없음'으로 기록한다"""
+    return [key for src, key in ROW_METRICS.items() if src not in raw.columns or raw[src].isna().all()]
+
+
 def latest_wins(frames: list[pd.DataFrame]) -> pd.DataFrame:
     """같은 날짜가 여러 프레임에 있으면 뒤 프레임 것만 남긴다"""
     seen: set = set()
@@ -258,11 +263,23 @@ def read_backup(src) -> dict:
 # ── 빌드 ───────────────────────────────────────────────────────────────
 def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache: bool) -> tuple[dict, dict]:
     dims = [k for k in ROW_DIMS.values() if k != 'adtype' and not (lite and k in LITE_DROP)]
-    frames, files = [], []
+    frames, files, miss = [], [], []
     for p in row_paths:
-        frames.append(prep_row(load_row_raw(p, use_cache=use_cache)))
+        raw = load_row_raw(p, use_cache=use_cache)
+        frames.append(prep_row(raw))
+        miss.append(missing_metrics(raw))
         files.append(Path(p).name)
+        if miss[-1]:
+            log(f'  ! {Path(p).name}: 없는 지표 → 그 날짜들은 "데이터 없음" {miss[-1]}')
     new = latest_wins(frames) if frames else None
+    mets = list(ROW_METRICS.values())
+    na: dict[str, set] = {m: set() for m in mets}     # 지표별 '데이터 없음' 날짜
+    seen: set = set()
+    for f, ms in zip(reversed(frames), reversed(miss)):   # 날짜마다 실제로 쓰인(뒤) 파일 기준
+        own = set(f['date'].unique()) - seen
+        seen |= own
+        for m in ms:
+            na[m] |= own
     info_prev = (base or {}).get('source', {}).get('row', {})
     parts, all_dates = [], set()
     unc = {'rows': 0, 'cost': 0.0, 'join': 0.0, 'adtypes': []}
@@ -272,9 +289,14 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
         for k in dims:                      # 예전 백업에 없던 차원은 '-'
             if k not in old.columns:
                 old[k] = '-'
-        for m in ROW_METRICS.values():      # 예전 백업에 없던 지표는 0
-            if m not in old.columns:
+        keep_dates = {d for d in old_dates if d not in new_dates}
+        prev_na = base['row'].get('na', {})
+        for m in mets:
+            if m not in old.columns:        # 예전 백업에 없던 지표는 그 날짜 전부 '데이터 없음'
                 old[m] = 0.0
+                na[m] |= keep_dates
+            else:
+                na[m] |= {pd.Timestamp(d) for d in prev_na.get(m, [])} & keep_dates
         old = old[~old['date'].isin(new_dates)]
         parts.append(old[['date', 't', *dims, *ROW_METRICS.values()]])
         all_dates |= {d for d in old_dates if d not in new_dates}
@@ -291,13 +313,14 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
     if not parts:
         return None, {}
     g = pd.concat(parts, ignore_index=True)
-    mets = list(ROW_METRICS.values())
     g = g.groupby(['date', 't', *dims], sort=False, observed=True)[mets].sum().reset_index()
     dates = sorted(all_dates)
     sec = encode(g, dates, ['t', *dims], mets, fixed={'t': TYPES})
+    sec['na'] = {m: sorted(d.strftime('%Y-%m-%d') for d in ds) for m, ds in na.items() if ds}
     info = {'files': (info_prev.get('files', []) if base else []) + files,
             'rows': int(len(g)), 'from': dates[0].strftime('%Y-%m-%d'), 'to': dates[-1].strftime('%Y-%m-%d'),
-            'days': len(dates), 'unclassified': unc}
+            'days': len(dates), 'unclassified': unc,
+            'na': {m: {'from': v[0], 'to': v[-1], 'days': len(v)} for m, v in sec['na'].items()}}
     info['file'] = ', '.join(info['files'][-3:])
     log(f'[로우] 집계 {len(g):,}행 · {len(dates)}일 ({info["from"]} ~ {info["to"]})')
     return sec, info

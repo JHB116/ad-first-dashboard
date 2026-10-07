@@ -80,6 +80,13 @@
     ds.f.d = Int32Array.from(sec.f.d);
     for (const k of ds.dimKeys) ds.f[k] = Int32Array.from(sec.f[k]);
     for (const m of ds.mets) ds.f[m] = Float64Array.from(sec.f[m]);
+    // 지표별 '데이터 없음' 날짜 (그 날짜 원천에 컬럼이 없었음) — 합계가 0 이 아니라 NaN 이 된다
+    ds.na = {};
+    for (const [m, list] of Object.entries(sec.na || {})) {
+      const a = new Uint8Array(ds.dates.length);
+      for (const d of list) { const i = ds.byNum.get(dnum(d)); if (i != null) a[i] = 1; }
+      ds.na[m] = a;
+    }
     return ds;
   }
 
@@ -97,7 +104,7 @@
       const key = gk(i);
       if (key == null) continue;
       let o = out.get(key);
-      if (!o) { o = {}; for (const m of mets) o[m] = new Float64Array(nd); out.set(key, o); }
+      if (!o) { o = {}; for (const m of mets) o[m] = new Float64Array(nd); withNa(o, ds.na); out.set(key, o); }
       const d = ds.f.d[i];
       for (let j = 0; j < mets.length; j++) o[mets[j]][d] += F[j][i];
     }
@@ -107,10 +114,14 @@
     const s = sel instanceof Set ? sel : new Set(sel);
     return Uint8Array.from(vals.map(v => s.has(v) ? 1 : 0));
   }
+  function withNa(o, na) { Object.defineProperty(o, '_na', { value: na || {}, enumerable: false }); return o; }
   function addSeries(list, mets, nd) {
     const o = {}; for (const m of mets) { o[m] = new Float64Array(nd); for (const s of list) if (s) { const a = s[m]; for (let i = 0; i < nd; i++) o[m][i] += a[i]; } }
-    return o;
+    const src = list.find(s => s && s._na);
+    return withNa(o, src ? src._na : {});
   }
+  // 날짜 집합 중 하루라도 '데이터 없음'이면 그 지표의 기간 값은 없음
+  function naIn(na, m, idx) { const a = na && na[m]; if (!a) return false; for (const i of idx) if (a[i]) return true; return false; }
 
   // ── 기간 ───────────────────────────────────────────────────────────
   // ISO 주(월~일), 표시 월·주차는 그 주 목요일 기준
@@ -178,14 +189,18 @@
 
   // ── 합계 · 지표 ────────────────────────────────────────────────────
   function sumIdx(series, idx, mets) {
-    const s = {}; for (const m of mets) { let v = 0; const a = series[m]; for (const i of idx) v += a[i]; s[m] = v; }
+    const s = {}, na = series._na;
+    for (const m of mets) {
+      if (naIn(na, m, idx)) { s[m] = NaN; continue; }
+      let v = 0; const a = series[m]; for (const i of idx) v += a[i]; s[m] = v;
+    }
     return s;
   }
   // 합계형은 mode==='avg' 이면 ÷일수, CPA·비율은 합계÷합계
   function value(metric, sums, days, mode) {
     if (!days) return null;
     const v = metric.f(sums);
-    if (v == null) return null;
+    if (v == null || Number.isNaN(v)) return null;
     if ((metric.kind === 'money' || metric.kind === 'count') && mode === 'avg') return v / days;
     return v;
   }
@@ -220,6 +235,10 @@
       }
       for (let k = 0; k < K; k++) if (hit[k]) for (let j = 0; j < mets.length; j++) total[k][mets[j]] += F[j][i];
     }
+    // '데이터 없음' 날짜가 낀 집합의 지표는 NaN
+    sets.forEach((set, k) => {
+      for (const m of mets) if (naIn(ds.na, m, set)) { total[k][m] = NaN; for (const n of nodes.values()) n.s[k][m] = NaN; }
+    });
     return { nodes, total, days: sets.map(s => s.length) };
   }
   function zero(mets) { const o = {}; for (const m of mets) o[m] = 0; return o; }
@@ -338,7 +357,7 @@
   const api = {
     TYPES, TOTAL, ROW_METS, METRICS, EXTRA, METRIC, HOLIDAYS, EVENTS, WD,
     div, pct, dnum, iso, dow, isOff, monthDays, weekInfo,
-    prepare, daily, addSeries, periods, compareIdx, rangeIdx, sumIdx, value, seriesValues,
+    prepare, daily, addSeries, naIn, periods, compareIdx, rangeIdx, sumIdx, value, seriesValues,
     tree, children, keyWhere, avgOf, weekdaySplit, weekdayAdjusted, baseline, sameDateIn, mixDecompose,
     fmt, fmtNum, scaled, unit,
   };

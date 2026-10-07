@@ -3,6 +3,7 @@
 
     python tests/make_sample.py <출력폴더>
       → sample_row.pkl (로우 시트 형태, 2025-01-01~2026-09-29) · sample_row_1001.pkl (2026-09-29~10-04, 추가분)
+        · sample_row_2024.pkl (2024년, 24년 원천처럼 일부 지표 컬럼 없음)
     python build_data.py --row <출력폴더>/sample_row.pkl
 """
 from __future__ import annotations
@@ -65,11 +66,16 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
     return pd.DataFrame(rows, columns=COLS)
 
 
+# 2024년 원천에는 없는 지표 컬럼 (컬럼 이름이 다르거나 없음)
+COLS_2024_MISSING = ['지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액', '지표_총결제고객수(윈백)']
+
+
 def main(out: Path):
     out.mkdir(parents=True, exist_ok=True)
     make_row().to_pickle(out / 'sample_row.pkl')
     # 추가분: 9/29(기존과 겹침 → 교체) ~ 10/4, 값은 2배
     make_row('2026-09-29', '2026-10-04', seed=11, scale_all=2.0, source='add.xlsx').to_pickle(out / 'sample_row_1001.pkl')
+    make_row('2024-01-01', '2024-12-31', seed=3, source='2024.xlsx').drop(columns=COLS_2024_MISSING).to_pickle(out / 'sample_row_2024.pkl')
     print('sample →', out)
 
 

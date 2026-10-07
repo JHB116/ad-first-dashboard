@@ -93,14 +93,33 @@ def test_multiple_row_files_later_wins(sample):
 
 
 def test_old_backup_without_new_metrics(sample, payload):
-    # 구매고객(buy) 등이 없던 예전 백업에 이어 붙여도 0 으로 채워 합친다
+    # 구매고객(buy) 등이 없던 예전 백업에 이어 붙이면, 예전 날짜는 그 지표가 '데이터 없음'
     old = json.loads(json.dumps(payload))
     for m in ('buy', 'rev', 'wb'):
         del old['row']['f'][m]
     p2 = bd.build([sample / 'sample_row_1001.pkl'], base=old)
+    na = p2['row']['na']
+    assert set(na) == {'buy', 'rev', 'wb'}
+    assert na['buy'][0] == '2025-01-01' and na['buy'][-1] == '2026-09-28'
     f = frame(p2['row'])
-    assert f[f['date'] < '2026-09-29']['buy'].sum() == 0
     assert f[f['date'] >= '2026-09-29']['buy'].sum() > 0
+
+
+def test_2024_file_missing_columns_marked_na(sample):
+    p = bd.build([sample / 'sample_row_2024.pkl', sample / 'sample_row.pkl'])
+    na = p['row']['na']
+    assert set(na) == {'fpn', 'nb', 'nrev', 'wb'}
+    for m in na:
+        assert na[m][0] == '2024-01-01' and na[m][-1] == '2024-12-31' and len(na[m]) == 366
+    assert p['source']['row']['na']['nb'] == {'from': '2024-01-01', 'to': '2024-12-31', 'days': 366}
+    assert p['source']['row']['from'] == '2024-01-01'
+    # 있는 지표(첫구매 · 구매고객)는 2024년도 들어온다
+    f = frame(p['row'])
+    y24 = f[f['date'] < '2025-01-01']
+    assert y24['fp'].sum() > 0 and y24['buy'].sum() > 0
+    # 이어 붙여도 '데이터 없음' 날짜가 유지된다
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(json.dumps(p)))
+    assert p2['row']['na']['nb'] == na['nb']
 
 
 def test_backup_roundtrip(payload, tmp_path, monkeypatch):
