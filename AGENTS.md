@@ -17,4 +17,4 @@ node --test tests/*.mjs
 python -c "from streamlit.testing.v1 import AppTest; at=AppTest.from_file('app.py'); at.run(); print(at.exception or 'OK')"
 ```
 
-화면을 바꾸면 `python tests/make_sample.py data/sample && python build_data.py --row data/sample/sample_row.pkl --af data/sample/Sheet_1_-_sample.csv`로 가짜 백업을 만들어 브라우저에서 해당 상호작용을 확인한다. 업로드를 바꾸면 `python -m streamlit run app.py`에서 xlsb 업로드 → 백업 만들기 → 대시보드 자동 열기까지 확인한다.
+화면을 바꾸면 `python tests/make_sample.py data/sample && python build_data.py --row data/sample/sample_row.pkl data/sample/sample_row_1001.pkl`로 가짜 백업을 만들어 브라우저에서 해당 상호작용을 확인한다. 업로드를 바꾸면 `python -m streamlit run app.py`에서 xlsb 업로드 → 백업 만들기 → 대시보드 자동 열기까지 확인한다.

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""build_data.py — 가짜 원천으로 분류 · 집계 · 이어 붙이기 · AF 읽기를 검증 (모든 숫자는 임의값)"""
+"""build_data.py — 가짜 원천으로 분류 · 집계 · 이어 붙이기를 검증 (모든 숫자는 임의값)"""
 import gzip
 import json
 
@@ -20,7 +20,7 @@ def sample(tmp_path_factory):
 
 @pytest.fixture(scope='module')
 def payload(sample):
-    return bd.build([sample / 'sample_row.pkl'], [sample / 'Sheet_1_-_sample.csv'])
+    return bd.build([sample / 'sample_row.pkl'])
 
 
 def frame(sec):
@@ -48,7 +48,7 @@ def test_row_totals_match_raw(sample, payload):
     raw['t'] = bd.classify(raw)
     raw = raw[raw['t'].notna()]
     got = frame(payload['row'])
-    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn']:
+    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv']:
         assert np.allclose(raw.groupby('t')[m].sum().sort_index(), got.groupby('t')[m].sum().sort_index(), atol=0.5), m
     # 차원별 합도 보존 (브랜드/기획전 · 디바이스)
     for k in ['bp', 'dev', 'camp']:
@@ -70,9 +70,9 @@ def test_lite_drops_dims(sample):
 
 
 def test_append_to_base_replaces_overlap(sample, payload):
-    # 기존 백업(~9/29) + 추가 파일(9/29~10/1): 9/29 는 새 값으로 교체, 나머지 날짜는 유지
+    # 기존 백업(~9/29) + 추가 파일(9/29~10/4): 9/29 는 새 값으로 교체, 나머지 날짜는 유지
     p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(json.dumps(payload)))
-    assert p2['source']['row']['to'] == '2026-10-01' and p2['source']['row']['days'] == 639
+    assert p2['source']['row']['to'] == '2026-10-04' and p2['source']['row']['days'] == 642
     old, new = frame(payload['row']), frame(p2['row'])
     add = bd.prep_row(bd.load_row_raw(sample / 'sample_row_1001.pkl'))
     add['t'] = bd.classify(add)
@@ -82,8 +82,6 @@ def test_append_to_base_replaces_overlap(sample, payload):
     d = pd.Timestamp('2026-09-28')
     assert new[new['date'] == d]['cost'].sum() == pytest.approx(old[old['date'] == d]['cost'].sum(), abs=1)
     assert p2['source']['row']['files'] == ['sample_row.pkl', 'sample_row_1001.pkl']
-    # AF 는 기존 백업 것을 그대로 유지
-    assert p2['af']['n'] == payload['af']['n']
 
 
 def test_multiple_row_files_later_wins(sample):
@@ -94,31 +92,15 @@ def test_multiple_row_files_later_wins(sample):
     assert a[a['date'] == d]['cost'].sum() != pytest.approx(b[b['date'] == d]['cost'].sum())
 
 
-def test_af_build(payload):
-    src = payload['source']['af']
-    assert src['to'] == '2026-10-05' and src['years'] == {'2024': 366, '2026': 278}
-    assert src['lastDay']['fp'] == pytest.approx(ms.AF_TARGET[('2026-10-05', '2026-10-05')][1])
-    af = frame(payload['af'])
-    m = af[(af['date'] >= '2026-07-01') & (af['date'] <= '2026-09-30')]
-    days = m['date'].nunique()
-    exp_ord, exp_fp = ms.AF_TARGET[('2026-07-01', '2026-09-30')]
-    assert m['ord'].sum() / days == pytest.approx(exp_ord, abs=0.05)
-    assert m['fp'].sum() / days == pytest.approx(exp_fp, abs=0.05)
-
-
-def test_af_same_date_later_file_wins(sample, tmp_path):
-    a = bd.read_af_file(sample / 'Sheet_1_-_sample.csv')
-    one = a[a['date'] == '2026-09-01']
-    p = tmp_path / 'Sheet_1_-_new.csv'
-    pd.DataFrame({'결제_일자': one['date'].dt.strftime('%Y%m%d'), 'AF중분류명': one['mid'], 'AF소분류명': one['sub'],
-                  'AF브랜드': one['brand'], 'AF캠페인상세': one['camp'], '주문고객수': one['ord'] * 2, '거래액': one['rev'],
-                  '신규고객수': one['new'], '신규거래액': one['nrev'], '첫구매고객수': one['fp'] * 2, '첫구매거래액': one['fpr']}
-                 ).to_csv(p, sep='\t', encoding='utf-16', index=False)
-    sec, info = bd.build_af_section([sample / 'Sheet_1_-_sample.csv', p], None)
-    af = frame(sec)
-    assert af[af['date'] == '2026-09-01']['ord'].sum() == pytest.approx(one['ord'].sum() * 2, rel=1e-6)
-    assert af[af['date'] == '2026-09-02']['ord'].sum() == pytest.approx(a[a['date'] == '2026-09-02']['ord'].sum(), rel=1e-6)
-    assert any('1일뿐' in w for w in info['warnings'])
+def test_old_backup_without_new_metrics(sample, payload):
+    # 구매고객(buy) 등이 없던 예전 백업에 이어 붙여도 0 으로 채워 합친다
+    old = json.loads(json.dumps(payload))
+    for m in ('buy', 'rev', 'wb'):
+        del old['row']['f'][m]
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=old)
+    f = frame(p2['row'])
+    assert f[f['date'] < '2026-09-29']['buy'].sum() == 0
+    assert f[f['date'] >= '2026-09-29']['buy'].sum() > 0
 
 
 def test_backup_roundtrip(payload, tmp_path, monkeypatch):

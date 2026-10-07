@@ -7,8 +7,7 @@
 
   const TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA'];
   const TOTAL = '합계';
-  const ROW_METS = ['cost', 'uv', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev'];
-  const AF_METS = ['ord', 'rev', 'new', 'nrev', 'fp', 'fpr'];
+  const ROW_METS = ['cost', 'uv', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb'];
 
   // 화면 지표 — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
   const METRICS = [
@@ -26,12 +25,9 @@
     { k: 'fpj', n: '첫구매/가입', kind: 'ratio', base: ['fp', 'join'], f: s => div(s.fp, s.join) },
     { k: 'fpn', n: '첫구매(순결제)', kind: 'count', base: ['fpn'], f: s => s.fpn },
     { k: 'uv', n: 'UV', kind: 'count', base: ['uv'], f: s => s.uv },
-  ];
-  const AF_METRICS = [
-    { k: 'ord', n: '주문고객', kind: 'count', f: s => s.ord },
-    { k: 'fp', n: '첫구매', kind: 'count', f: s => s.fp },
-    { k: 'share', n: '첫구매 비중', kind: 'ratio', f: s => div(s.fp, s.ord), ratio: true },
-    { k: 'fpr', n: '첫구매거래액', kind: 'money', f: s => s.fpr },
+    { k: 'buy', n: '구매고객', kind: 'count', base: ['buy'], f: s => s.buy },
+    { k: 'fps', n: '첫구매 비중', kind: 'ratio', base: ['fp', 'buy'], f: s => div(s.fp, s.buy) },   // 첫구매 ÷ 구매고객(총결제)
+    { k: 'fpu', n: '첫구매 전환율', kind: 'ratio', base: ['fp', 'uv'], f: s => div(s.fp, s.uv) },    // 첫구매 ÷ UV
   ];
   const METRIC = Object.fromEntries([...METRICS, ...EXTRA].map(m => [m.k, m]));
 
@@ -243,8 +239,8 @@
     return w;
   }
 
-  // ── 베이스라인 · 계절 기대치 · 요일 보정 (AF) ───────────────────────
-  // series: {ord, fp, ...} 일자 배열. base/recent: 날짜 인덱스 배열. ref*: 비교 연도 같은 구간
+  // ── 베이스라인 · 계절 기대치 · 요일 보정 ─────────────────────────────
+  // series: {buy, fp, uv, ...} 일자 배열. base/recent: 날짜 인덱스 배열. ref*: 비교 연도 같은 구간
   function avgOf(series, idx, mets) { const s = sumIdx(series, idx, mets), n = idx.length; const o = { days: n }; for (const m of mets) o[m] = n ? s[m] / n : null; return o; }
   function weekdaySplit(ds, idx) {
     const off = [], on = [];
@@ -262,14 +258,15 @@
     return o;
   }
   function baseline(ds, series, { base, recent, refBase, refRecent }) {
-    const mets = ['ord', 'fp', 'fpr'];
+    const mets = ['buy', 'fp', 'uv'];
     const B = avgOf(series, base, mets), R = avgOf(series, recent, mets);
     const RB = avgOf(series, refBase, mets), RR = avgOf(series, refRecent, mets);
     const W = weekdayAdjusted(ds, series, base, recent, mets);
     const RW = weekdayAdjusted(ds, series, refBase, refRecent, mets);
     const out = { base: B, recent: R, refBase: RB, refRecent: RR, adj: W, refAdj: RW, rows: {} };
-    for (const k of ['ord', 'fp', 'share']) {
-      const get = o => k === 'share' ? div(o.fp, o.ord) : o[k];
+    // buy 구매고객 · fp 첫구매 · share 첫구매 비중(fp/buy) · uv · cr 첫구매 전환율(fp/uv)
+    for (const k of ['buy', 'fp', 'share', 'uv', 'cr']) {
+      const get = o => k === 'share' ? div(o.fp, o.buy) : k === 'cr' ? div(o.fp, o.uv) : o[k];
       const b = get(B), r = get(R), rb = get(RB), rr = get(RR), w = get(W), rw = get(RW);
       const season = (rb && rr != null) ? rr / rb : null;            // 비교 연도 같은 구간 증감 배수
       const exp = (b != null && season != null) ? b * season : null;  // 단순 기대치
@@ -288,18 +285,18 @@
   }
 
   // ── 구성 효과 분해 (shift-share) ───────────────────────────────────
-  // items: [{name, b:{ord,fp}, r:{ord,fp}}] (일평균). 비중 R = Σ w_i r_i
+  // items: [{name, b:{buy,fp}, r:{buy,fp}}] (일평균). 비중 R = Σ w_i r_i
   //  구성효과 = Σ (w1-w0) r0 · 내부효과 = Σ w1 (r1-r0)
   function mixDecompose(items) {
-    const O0 = items.reduce((a, x) => a + x.b.ord, 0), O1 = items.reduce((a, x) => a + x.r.ord, 0);
+    const O0 = items.reduce((a, x) => a + x.b.buy, 0), O1 = items.reduce((a, x) => a + x.r.buy, 0);
     const F0 = items.reduce((a, x) => a + x.b.fp, 0), F1 = items.reduce((a, x) => a + x.r.fp, 0);
     let mix = 0, within = 0;
     const rows = items.map(x => {
-      const w0 = O0 ? x.b.ord / O0 : 0, w1 = O1 ? x.r.ord / O1 : 0;
-      const r0 = x.b.ord ? x.b.fp / x.b.ord : 0, r1 = x.r.ord ? x.r.fp / x.r.ord : r0;
+      const w0 = O0 ? x.b.buy / O0 : 0, w1 = O1 ? x.r.buy / O1 : 0;
+      const r0 = x.b.buy ? x.b.fp / x.b.buy : 0, r1 = x.r.buy ? x.r.fp / x.r.buy : r0;
       const m = (w1 - w0) * r0, wi = w1 * (r1 - r0);
       mix += m; within += wi;
-      return { ...x, w0, w1, r0: x.b.ord ? r0 : null, r1: x.r.ord ? x.r.fp / x.r.ord : null, mix: m, within: wi, dfp: x.r.fp - x.b.fp };
+      return { ...x, w0, w1, r0: x.b.buy ? r0 : null, r1: x.r.buy ? x.r.fp / x.r.buy : null, mix: m, within: wi, dfp: x.r.fp - x.b.fp };
     });
     const R0 = div(F0, O0), R1 = div(F1, O1);
     return { rows, R0, R1, mix, within, F0, F1, O0, O1 };
@@ -339,7 +336,7 @@
   }
 
   const api = {
-    TYPES, TOTAL, ROW_METS, AF_METS, METRICS, EXTRA, METRIC, AF_METRICS, HOLIDAYS, EVENTS, WD,
+    TYPES, TOTAL, ROW_METS, METRICS, EXTRA, METRIC, HOLIDAYS, EVENTS, WD,
     div, pct, dnum, iso, dow, isOff, monthDays, weekInfo,
     prepare, daily, addSeries, periods, compareIdx, rangeIdx, sumIdx, value, seriesValues,
     tree, children, keyWhere, avgOf, weekdaySplit, weekdayAdjusted, baseline, sameDateIn, mixDecompose,

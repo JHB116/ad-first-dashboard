@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""광고 신규 실적 대시보드 — 원천(로우 시트 xlsb · AF 결제 csv) → 백업 파일(.json.gz)
+"""광고 신규 실적 대시보드 — 원천(로우 시트 xlsb) → 백업 파일(.json.gz)
 
 사용법
-    python build_data.py                                  # data/raw/ 의 *.xlsb · Sheet_1*.csv 전부로 새로 빌드
-    python build_data.py --row a.xlsb b.xlsb --af x.csv   # 파일 직접 지정 (여러 개 가능)
+    python build_data.py                                  # data/raw/ 의 *.xlsb 전부로 새로 빌드
+    python build_data.py --row a.xlsb b.xlsb              # 파일 직접 지정 (여러 개 가능)
     python build_data.py --base 기존백업.json.gz --row 1001.xlsb   # 기존 백업에 새 날짜 추가 · 같은 날짜 교체
     python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 차원 빼고 가볍게
 
@@ -59,27 +59,14 @@ ROW_METRICS = {
     '지표_순결제고객수(첫구매)': 'fpn',     # 일보고서 시트 '첫구매수' (참고)
     '지표_당년신규순결제고객수': 'nb',      # 신규구매자
     '지표_당년신규순결제거래액': 'nrev',    # 신규거래액
+    '지표_총결제고객수': 'buy',             # 구매고객 (첫구매 비중의 분모)
+    '지표_총결제거래액': 'rev',             # 거래액
+    '지표_총결제고객수(윈백)': 'wb',        # 윈백 구매고객
 }
 ROW_DATE = '기간_일자'
 TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA']
 PAY_MEDIA = ['PAYCO', '토스']
 
-# ── 1-B. AF 결제 데이터 ────────────────────────────────────────────────
-AF_COLS = {
-    '결제_일자': 'date',
-    'AF중분류명': 'mid',
-    'AF소분류명': 'sub',
-    'AF브랜드': 'brand',
-    'AF캠페인상세': 'camp',
-    '주문고객수': 'ord',
-    '거래액': 'rev',
-    '신규고객수': 'new',
-    '신규거래액': 'nrev',
-    '첫구매고객수': 'fp',
-    '첫구매거래액': 'fpr',
-}
-AF_DIMS = ['mid', 'sub', 'brand', 'camp']
-AF_METRICS = ['ord', 'rev', 'new', 'nrev', 'fp', 'fpr']
 MONEY = {'cost', 'fpr', 'nrev', 'rev'}
 
 
@@ -224,53 +211,6 @@ def agg_row(df: pd.DataFrame, dims: list[str]) -> tuple[pd.DataFrame, dict]:
     return g, unc
 
 
-# ── AF 읽기 ────────────────────────────────────────────────────────────
-def read_af_file(path) -> pd.DataFrame:
-    path = Path(path)
-    for enc in ('utf-16', 'utf-8-sig', 'cp949'):
-        try:
-            df = pd.read_csv(path, encoding=enc, sep='\t', thousands=',', dtype=str)
-            if len(df.columns) > 3:
-                break
-        except (UnicodeError, UnicodeDecodeError, pd.errors.ParserError):
-            continue
-    else:
-        raise ValueError(f'[AF] {path.name} 을 읽지 못했습니다 (UTF-16 탭 구분 csv 여야 합니다)')
-    df.columns = [c.strip() for c in df.columns]
-    missing = [c for c in AF_COLS if c not in df.columns]
-    if '결제_일자' in missing or '첫구매고객수' in missing:
-        raise ValueError(f'[AF] {path.name}: 필수 컬럼 없음 {missing}')
-    if missing:
-        log(f'  ! {path.name}: 없는 컬럼(0/빈값) {missing}')
-    out = pd.DataFrame({'date': pd.to_datetime(df['결제_일자'].astype(str).str.strip().str[:8], format='%Y%m%d', errors='coerce')})
-    for src, key in AF_COLS.items():
-        if key == 'date':
-            continue
-        col = df[src] if src in df.columns else pd.Series(None, index=df.index)
-        out[key] = to_num(col) if key in AF_METRICS else clean_dim(col)
-    out = out[out['date'].notna()]
-    out['_file'] = path.name
-    return out
-
-
-def af_sanity(df: pd.DataFrame) -> list[str]:
-    """잘못 뽑힌 파일(하루치만 · 첫구매 비정상) 경고"""
-    warns = []
-    for f, g in df.groupby('_file', sort=False):
-        days = g['date'].nunique()
-        d = g.groupby('date')[['ord', 'fp']].sum()
-        ratio = (d['fp'] / d['ord'].where(d['ord'] > 0)).dropna()
-        med = ratio.median() if len(ratio) else float('nan')
-        log(f'  {f}: {g["date"].min():%Y-%m-%d} ~ {g["date"].max():%Y-%m-%d}, {days}일, 첫구매/주문 중앙값 {med:.3f}')
-        if days <= 2:
-            warns.append(f'{f}: 데이터가 {days}일뿐입니다 — 기간을 잘못 뽑았는지 확인하세요')
-        low = ratio[ratio < med * 0.4] if med == med else ratio.iloc[0:0]
-        low = low[low.index != d.index.max()]   # 최신일은 원래 미확정
-        if len(low):
-            warns.append(f'{f}: 첫구매/주문 비중이 비정상적으로 낮은 날 {len(low)}일 (예: {", ".join(x.strftime("%m/%d") for x in low.index[:5])})')
-    return warns
-
-
 # ── 인코딩 · 디코딩 ────────────────────────────────────────────────────
 def encode(g: pd.DataFrame, dates, dims, mets, fixed: dict | None = None) -> dict:
     """열 단위 + 사전 인덱스로 압축: dims[k] = 값 목록, f[k] = 인덱스 배열"""
@@ -332,6 +272,9 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
         for k in dims:                      # 예전 백업에 없던 차원은 '-'
             if k not in old.columns:
                 old[k] = '-'
+        for m in ROW_METRICS.values():      # 예전 백업에 없던 지표는 0
+            if m not in old.columns:
+                old[m] = 0.0
         old = old[~old['date'].isin(new_dates)]
         parts.append(old[['date', 't', *dims, *ROW_METRICS.values()]])
         all_dates |= {d for d in old_dates if d not in new_dates}
@@ -360,59 +303,17 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
     return sec, info
 
 
-def build_af_section(af_paths: list, base: dict | None) -> tuple[dict, dict]:
-    frames = [read_af_file(p) for p in af_paths]
-    new = pd.concat(frames, ignore_index=True) if frames else None
-    warns = af_sanity(new) if new is not None else []
-    if new is not None:
-        # 같은 날짜가 여러 파일에 있으면 뒤 파일
-        new = latest_wins([f for _, f in new.groupby('_file', sort=False)]) if new['_file'].nunique() > 1 else new
-    parts, all_dates = [], set()
-    new_dates = set(new['date'].unique()) if new is not None else set()
-    info_prev = (base or {}).get('source', {}).get('af', {})
-    if base and base.get('af'):
-        old, old_dates = decode(base['af'])
-        old = old[~old['date'].isin(new_dates)]
-        parts.append(old[['date', *AF_DIMS, *AF_METRICS]])
-        all_dates |= {d for d in old_dates if d not in new_dates}
-    if new is not None and len(new):
-        parts.append(new.groupby(['date', *AF_DIMS], sort=False)[AF_METRICS].sum().reset_index())
-        all_dates |= new_dates
-    if not parts:
-        return None, {}
-    g = pd.concat(parts, ignore_index=True).groupby(['date', *AF_DIMS], sort=False)[AF_METRICS].sum().reset_index()
-    g = g[(g[AF_METRICS].abs() > 1e-9).any(axis=1)]
-    dates = sorted(all_dates)
-    last = dates[-1]
-    last_d = g[g['date'] == last][['ord', 'fp']].sum()
-    info = {
-        'files': (info_prev.get('files', []) if base else []) + [Path(p).name for p in af_paths],
-        'rows': int(len(g)), 'from': dates[0].strftime('%Y-%m-%d'), 'to': last.strftime('%Y-%m-%d'), 'days': len(dates),
-        'years': {str(y): int(n) for y, n in pd.Series(dates).dt.year.value_counts().sort_index().items()},
-        'lastDay': {'ord': float(last_d['ord']), 'fp': float(last_d['fp'])},
-        'warnings': warns or (info_prev.get('warnings', []) if not af_paths else []),
-    }
-    log(f'[AF] 집계 {len(g):,}행 ({info["from"]} ~ {info["to"]}, {len(dates)}일, 연도별 {info["years"]})')
-    for w in warns:
-        log('  ! ' + w)
-    return encode(g, dates, AF_DIMS, AF_METRICS), info
-
-
-def build(row_paths=(), af_paths=(), base: dict | None = None, lite: bool = False, use_cache: bool = True) -> dict:
-    """원천 파일들(+기존 백업) → 백업 payload. 같은 날짜는 새 파일이 기존 백업을 덮어쓴다"""
-    row_paths, af_paths = list(row_paths or []), list(af_paths or [])
+def build(row_paths=(), base: dict | None = None, lite: bool = False, use_cache: bool = True) -> dict:
+    """로우 원천 파일들(+기존 백업) → 백업 payload. 같은 날짜는 새 파일이 기존 백업을 덮어쓴다"""
+    row_paths = list(row_paths or [])
     payload = {'format': FORMAT, 'version': VERSION, 'created': dt.datetime.now().isoformat(timespec='seconds'), 'source': {}}
     if row_paths or (base and base.get('row')):
         sec, info = build_row_section(row_paths, base, lite, use_cache)
         if sec:
             payload['row'], payload['source']['row'] = sec, info
-    if af_paths or (base and base.get('af')):
-        sec, info = build_af_section(af_paths, base)
-        if sec:
-            payload['af'], payload['source']['af'] = sec, info
     if not payload['source']:
         raise ValueError('읽은 원천이 없습니다')
-    payload['lastDate'] = payload['source'].get('row', payload['source'].get('af', {})).get('to')
+    payload['lastDate'] = payload['source']['row']['to']
     return payload
 
 
@@ -444,20 +345,18 @@ def by_mtime(paths):
 def main(argv=None):
     ap = argparse.ArgumentParser(description='광고 신규 실적 대시보드 백업 만들기')
     ap.add_argument('--row', type=Path, nargs='*', help='로우 시트 xlsb 들 (기본: data/raw 의 *.xlsb 전부, 수정시각 순)')
-    ap.add_argument('--af', type=Path, nargs='*', help='AF 결제 csv 들 (기본: data/raw 의 Sheet_1*.csv 전부)')
     ap.add_argument('--base', type=Path, help='이어 붙일 기존 백업(.json.gz)')
     ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외')
     ap.add_argument('--out-stamp', help='파일명 날짜 (기본: 로우 최신일)')
     a = ap.parse_args(argv)
 
     rows = a.row if a.row is not None else by_mtime(RAW_DIR.glob('*.xlsb'))
-    afs = a.af if a.af is not None else by_mtime(RAW_DIR.glob('Sheet_1*.csv'))
     base = read_backup(a.base) if a.base else None
-    if not rows and not afs and not base:
-        sys.exit('원천 파일이 없습니다. data/raw/ 에 xlsb · AF csv 를 넣거나 --row/--af 로 지정하세요.')
-    log(f'로우: {[Path(p).name for p in rows] or "(없음)"} / AF: {[Path(p).name for p in afs] or "(없음)"}' + (f' / 기존 백업: {a.base.name}' if base else ''))
+    if not rows and not base:
+        sys.exit('원천 파일이 없습니다. data/raw/ 에 로우 시트 xlsb 를 넣거나 --row 로 지정하세요.')
+    log(f'로우: {[Path(p).name for p in rows] or "(없음)"}' + (f' / 기존 백업: {a.base.name}' if base else ''))
     try:
-        payload = build(rows, afs, base=base, lite=a.lite)
+        payload = build(rows, base=base, lite=a.lite)
     except ValueError as e:
         sys.exit(str(e))
     write_backup(payload, a.out_stamp)

@@ -181,7 +181,7 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
         <button data-page="trend">유형별 추이</button>
         <button data-page="drill">광고 드릴다운</button>
         <button data-page="da">DA 가입 분해</button>
-        <button data-page="af">AF 첫구매 진단</button>
+        <button data-page="diag">첫구매 진단</button>
       </nav>
       <div class="bk-tools">
         <button class="btn" id="btnOpen" type="button" title="build_data.py 로 만든 백업(.json.gz) 열기">백업 파일 열기</button>
@@ -212,6 +212,14 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
       </div>
       <button class="filt-tg" id="btnFilt" type="button" aria-expanded="false" aria-controls="filtRows"><span class="filt-ic" aria-hidden="true">▸</span>필터<b id="filtN" hidden></b><span class="filt-sum" id="filtSum"></span></button>
     </div>
+    <div class="bar2" id="barDg" hidden>
+      <span class="field">베이스라인 <input type="date" id="dgB0"> ~ <input type="date" id="dgB1"></span>
+      <span class="field">최근 <input type="date" id="dgR0"> ~ <input type="date" id="dgR1"></span>
+      <label class="field">계절 비교 연도 <select id="dgRefY"></select></label>
+      <label class="field"><input type="checkbox" id="dgDropLast"> 최신일 제외</label>
+      <button class="lnk" id="dgReset" type="button">기본값</button>
+      <button class="filt-tg" id="btnFilt2" type="button" aria-expanded="false" aria-controls="filtRows"><span class="filt-ic" aria-hidden="true">▸</span>필터<b id="filtN2" hidden></b><span class="filt-sum" id="filtSum2"></span></button>
+    </div>
     <div id="filtRows" hidden>
       <div class="bar2">
         <span class="flabel">광고유형</span>
@@ -226,21 +234,6 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
         <span class="hint">기본은 필터 없음(E영업·서비스비용 조정분 포함 = 일보고서 시트와 일치)</span>
       </div>
     </div>
-    <div class="bar2" id="barAf" hidden>
-      <span class="field">베이스라인 <input type="date" id="afB0"> ~ <input type="date" id="afB1"></span>
-      <span class="field">최근 <input type="date" id="afR0"> ~ <input type="date" id="afR1"></span>
-      <label class="field">계절 비교 연도 <select id="afRefY"></select></label>
-      <label class="field"><input type="checkbox" id="afDropLast"> 최신일(미확정) 제외</label>
-      <button class="lnk" id="afReset" type="button">기본값</button>
-      <button class="filt-tg" id="btnAfFilt" type="button" aria-expanded="false" aria-controls="afFiltRows"><span class="filt-ic" aria-hidden="true">▸</span>중분류<b id="afFiltN" hidden></b><span class="filt-sum" id="afFiltSum"></span></button>
-    </div>
-    <div id="afFiltRows" hidden>
-      <div class="bar2">
-        <span class="flabel">AF중분류</span>
-        <div class="chips" id="afMidChips" role="group" aria-label="AF 중분류 선택"></div>
-        <button class="lnk" data-quick="mid-all">모두</button>
-      </div>
-    </div>
   </div>
 </header>
 
@@ -253,7 +246,6 @@ const $id = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = { '브랜드검색광고': '--c1', '사이트검색광고': '--c2', '쇼핑검색광고': '--c3', 'DA': '--c4', 'DA(페이먼츠)': '--c5', '메시지': '--c6', 'PA': '--c7', '합계': '--ink' };
 const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용출처', camp: '캠페인', sub: '하위캠페인', bp: '브랜드/기획전', dev: '디바이스' };
-const AF_DIM_NAME = { mid: '중분류', sub: '소분류', brand: '브랜드', camp: '캠페인' };
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
@@ -261,10 +253,10 @@ const DEF = {
   types: null, srcs: null, hidden: {}, filtOpen: false,
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'cost' },
   da: { metric: 'join', media: null, kakao: true },
-  af: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2024, dropLast: true, mids: null, brandMid: '', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false, open: [] },
+  diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dropLast: false, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
 };
 let S = load();
-let P = null, R = null, A = null;  // 백업 · 로우 데이터셋 · AF 데이터셋
+let P = null, R = null;  // 백업 · 로우 데이터셋
 const cache = {};
 
 function load() {
@@ -309,22 +301,18 @@ function toast(msg) { const d = document.createElement('div'); d.className = 'ca
 function use(p) {
   P = p;
   R = C.prepare(p.row, C.ROW_METS);
-  A = C.prepare(p.af, C.AF_METS);
   for (const k in cache) delete cache[k];
   $id('btnClear').hidden = false;
   const src = p.source || {};
   const parts = [];
   if (src.row) parts.push(`일보고서 ${src.row.from.slice(2).replace(/-/g, '.')} ~ ${src.row.to.slice(2).replace(/-/g, '.')}`);
-  if (src.af) parts.push(`AF ${src.af.to.slice(2).replace(/-/g, '.')}`);
   $id('asof').textContent = parts.join(' · ');
-  if (!R && S.page !== 'af') S.page = 'af';
-  if (!A && S.page === 'af') S.page = 'trend';
   render();
 }
 function showEmpty(extra = '') {
   $id('main').innerHTML = `<div class="drop-empty"><h2>광고 신규 실적 대시보드</h2>
     <p><b>백업 파일(.json.gz)</b>을 여기에 끌어다 놓거나 위쪽 <b>백업 파일 열기</b>로 고르세요.</p>
-    <p class="hint">백업이 없으면 Streamlit 화면 맨 위 <b>원천 파일로 백업 만들기</b>에서 로우 시트 xlsb · AF 결제 csv 를 올려 만들거나, 로컬에서 <code>python build_data.py</code> 로 만듭니다. 열어 둔 데이터는 이 브라우저에만 저장됩니다.</p>${extra}
+    <p class="hint">백업이 없으면 Streamlit 화면 맨 위 <b>원천 파일로 백업 만들기</b>에서 로우 시트 xlsb 를 올려 만들거나, 로컬에서 <code>python build_data.py</code> 로 만듭니다. 열어 둔 데이터는 이 브라우저에만 저장됩니다.</p>${extra}
     <p><button class="btn" type="button" onclick="document.getElementById('fileOpen').click()">백업 파일 열기</button></p></div>`;
 }
 
@@ -543,7 +531,7 @@ function filterSummary() {
 // ════════════════════════════════════════════════════════════════════
 // 2. 광고 드릴다운
 // ════════════════════════════════════════════════════════════════════
-const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fpr', 'nb', 'nrev'];
+const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fps', 'fpr', 'nb', 'nrev'];
 function renderDrill(main) {
   const D = S.drill, ps = plist(), sh = shown(ps), at = sh[sh.length - 1];
   const cmpIdx = C.compareIdx(R, at, S.grain, S.cmp);
@@ -678,211 +666,234 @@ function renderDA(main) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 4. AF 첫구매 진단
+// 4. 첫구매 진단 (로우 기준 — 구매고객 · 첫구매 · 비중 · UV · 전환율)
 // ════════════════════════════════════════════════════════════════════
-function afValid() {
-  const v = new Uint8Array(A.dates.length).fill(1);
-  if (S.af.dropLast) v[A.dates.length - 1] = 0;
+const DIAG_DIMS = ['t', 'ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev'];
+function dgValid() {
+  const v = new Uint8Array(R.dates.length).fill(1);
+  if (S.diag.dropLast) v[R.dates.length - 1] = 0;
   return v;
 }
-function afLastOk() { return A.dates[A.dates.length - 1 - (S.af.dropLast ? 1 : 0)]; }
-function afYears() { return [...new Set(A.dates.map(d => +d.slice(0, 4)))]; }
-function afWhere() { return S.af.mids ? { mid: new Set(S.af.mids) } : null; }
-function afRanges() {
-  const F = S.af, valid = afValid();
-  const r1 = F.r1 && F.r1 <= afLastOk() ? F.r1 : afLastOk();
-  const curY = +F.r0.slice(0, 4), refY = F.refY, dy = curY - refY;
+function dgLastOk() { return R.dates[R.dates.length - 1 - (S.diag.dropLast ? 1 : 0)]; }
+function dgYears() { return [...new Set(R.dates.map(d => +d.slice(0, 4)))]; }
+function dgWhere() { return { ...(srcWhere() || {}), t: new Set(selTypes()) }; }
+function dgRanges() {
+  const F = S.diag, valid = dgValid();
+  const r1 = F.r1 && F.r1 <= dgLastOk() ? F.r1 : dgLastOk();
+  const curY = +F.r0.slice(0, 4), dy = curY - F.refY;
   const sh = d => C.sameDateIn(d, +d.slice(0, 4) - dy);
   return {
-    valid, r1,
-    base: C.rangeIdx(A, F.b0, F.b1, valid), recent: C.rangeIdx(A, F.r0, r1, valid),
-    refBase: C.rangeIdx(A, sh(F.b0), sh(F.b1), valid), refRecent: C.rangeIdx(A, sh(F.r0), sh(r1), valid),
+    valid, r1, curY,
+    base: C.rangeIdx(R, F.b0, F.b1, valid), recent: C.rangeIdx(R, F.r0, r1, valid),
+    refBase: C.rangeIdx(R, sh(F.b0), sh(F.b1), valid), refRecent: C.rangeIdx(R, sh(F.r0), sh(r1), valid),
     refLbl: [sh(F.b0), sh(F.b1), sh(F.r0), sh(r1)],
   };
 }
 function compo(idx) {
-  const s = C.weekdaySplit(A, idx), hol = idx.map(i => A.dates[i]).filter(d => C.HOLIDAYS[d]).map(d => `${+d.slice(5, 7)}/${+d.slice(8)} ${C.HOLIDAYS[d]}`);
+  const s = C.weekdaySplit(R, idx), hol = idx.map(i => R.dates[i]).filter(d => C.HOLIDAYS[d]).map(d => `${+d.slice(5, 7)}/${+d.slice(8)} ${C.HOLIDAYS[d]}`);
   return `${idx.length}일(평일 ${s.on.length} · 주말·휴일 ${s.off.length}${hol.length ? ': ' + hol.join(', ') : ''})`;
 }
-const md = d => d ? `${+d.slice(5, 7)}/${+d.slice(8)}` : '';
 const ymd = d => d ? `${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8)}` : '';
 function sgn(p, dp = 1) { if (p == null || !isFinite(p)) return '–'; const t = Math.abs(p).toFixed(dp); return +t === 0 ? `${(0).toFixed(dp)}%` : `${p > 0 ? '+' : '-'}${t}%`; }
 function clsP(p, lowerBetter) { if (p == null || Math.abs(p) < 0.05) return ''; return (lowerBetter ? p < 0 : p > 0) ? 'pos' : 'neg'; }
+const DG_ROWS = [
+  { k: 'buy', n: '구매고객', kind: 'count' },
+  { k: 'fp', n: '첫구매', kind: 'count' },
+  { k: 'share', n: '첫구매 비중', kind: 'ratio', sub: '첫구매 ÷ 구매고객' },
+  { k: 'uv', n: 'UV', kind: 'count' },
+  { k: 'cr', n: '첫구매 전환율', kind: 'ratio', sub: '첫구매 ÷ UV' },
+];
+const dgFmt = (kind, v) => kind === 'ratio' ? C.fmt('ratio', v, { dp: v != null && Math.abs(v) < 0.01 ? 2 : 1 }) : C.fmtNum(v, 1);
 
-function renderAF(main) {
-  const F = S.af, rg = afRanges(), src = P.source.af || {};
-  const series = C.daily(A, { where: afWhere() }).get('_') || C.addSeries([], C.AF_METS, A.dates.length);
-  const bl = C.baseline(A, series, rg);
-  const curY = +F.r0.slice(0, 4);
-  const midLbl = F.mids ? F.mids.join('·') : '광고 전체';
-  let h = '';
-  // 원천 점검
-  const warns = (src.warnings || []);
-  h += `<section><div class="sec-h"><h2>원천 점검 · AF 결제 데이터</h2><span class="desc">${esc((src.files || []).join(', '))}</span></div>
-    <div class="card pad${warns.length ? ' warn' : ''}"><ul class="notes">
-    <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${Object.entries(src.years || {}).map(([y, n]) => `${y}년 ${n}일`).join(', ')} <span class="hint">(2025년 없음 — 계절 비교는 ${esc(F.refY)}년)</span></li>
-    <li>최신일 ${esc(src.to)}: 주문 ${C.fmtNum(src.lastDay?.ord, 0)} · 첫구매 ${C.fmtNum(src.lastDay?.fp, 0)} → <b>당일 첫구매 미확정</b>, ${F.dropLast ? '분석에서 제외 중' : '포함 중(주의)'}</li>
-    ${warns.map(w => `<li class="neg">${esc(w)}</li>`).join('')}
-    <li>결제일 기준 AF코드 단위 · 광고비 없음 · 취소분(음수) 합산 · <b>일보고서와 집계 기준이 달라 절대값이 다르다 — 두 소스를 한 그래프에 섞지 않는다</b></li></ul></div></section>`;
+function renderDiag(main) {
+  if (!R.mets.includes('buy')) {
+    main.innerHTML = `<div class="card pad warn" style="margin-top:24px">이 백업에는 '지표_총결제고객수'(구매고객)가 없어 첫구매 진단을 할 수 없습니다. 원천 파일로 백업을 다시 만들어 주세요.</div>`;
+    return;
+  }
+  const F = S.diag, rg = dgRanges(), src = P.source.row || {};
+  const series = C.daily(R, { where: dgWhere() }).get('_') || C.addSeries([], C.ROW_METS, R.dates.length);
+  const bl = C.baseline(R, series, rg), rows = bl.rows;
+  const filt = filterSummary() || '광고 전체';
+  const hasRef = rg.refBase.length > 0 && rg.refRecent.length > 0;
+  const years = Object.entries(R.dates.reduce((a, d) => { const y = d.slice(0, 4); a[y] = (a[y] || 0) + 1; return a; }, {}));
+  let h = `<section><div class="sec-h"><h2>원천 · 구간</h2><span class="desc">로우 시트 · ${esc(src.file || '')}</span></div>
+    <div class="card pad${hasRef ? '' : ' warn'}"><ul class="notes">
+    <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')} · 최신일 ${S.diag.dropLast ? '<b>제외 중</b>' : '포함'}</li>
+    <li>베이스라인 ${ymd(F.b0)}~${ymd(F.b1)} ${compo(rg.base)} → 최근 ${ymd(F.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
+    <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
+      : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절 기대치를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
+    <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li></ul></div></section>`;
 
-  // 베이스라인 진단
-  const rows = bl.rows;
-  const judge = (k, nm, lower) => {
-    const r = rows[k], use = r.vsExpAdj != null ? 'vsExpAdj' : 'vsExp', v = r[use];
-    const word = v == null ? '판정 불가' : (Math.abs(v) < 0.5 ? '기대치 수준' : (v > 0 ? '기대치 대비 높음' : '기대치 대비 낮음'));
-    return `<div class="h">□ ${nm}: ${word} ${v == null ? '' : `<span class="${clsP(v)}">${sgn(v)}</span>`}</div>
-      <div class="l2">${k === 'share' ? C.fmt('ratio', r.base, { dp: 1 }) + ' → ' + C.fmt('ratio', r.recent, { dp: 1 }) : C.fmtNum(r.base, 1) + ' → ' + C.fmtNum(r.recent, 1)} (${sgn(r.chg)}) · ${esc(F.refY)}년 같은 구간 ${sgn(r.season)} 반영 기대치 ${k === 'share' ? C.fmt('ratio', r.exp, { dp: 1 }) : C.fmtNum(r.exp, 1)}${r.expAdj != null ? ` · 요일 보정 기대치 ${k === 'share' ? C.fmt('ratio', r.expAdj, { dp: 1 }) : C.fmtNum(r.expAdj, 1)} (${sgn(r.vsExpAdj)})` : ''}</div>`;
+  const judge = (k, nm) => {
+    const r = rows[k], kind = k === 'share' || k === 'cr' ? 'ratio' : 'count';
+    const v = r.vsExpAdj != null ? r.vsExpAdj : r.vsExp;
+    const word = v == null ? '기대치 없음' : (Math.abs(v) < 0.5 ? '기대치 수준' : (v > 0 ? '기대치 대비 높음' : '기대치 대비 낮음'));
+    return `<div class="h">□ ${nm}: ${word} ${v == null ? `<span class="${clsP(r.chg)}">(베이스라인 대비 ${sgn(r.chg)})</span>` : `<span class="${clsP(v)}">${sgn(v)}</span>`}</div>
+      <div class="l2">${dgFmt(kind, r.base)} → ${dgFmt(kind, r.recent)} (${sgn(r.chg)})${r.exp != null ? ` · ${esc(F.refY)}년 같은 구간 ${sgn(r.season)} 반영 기대치 ${dgFmt(kind, r.exp)}` : ''}${r.expAdj != null ? ` · 요일 보정 기대치 ${dgFmt(kind, r.expAdj)} (${sgn(r.vsExpAdj)})` : ''}</div>`;
   };
-  const shareBad = rows.share.chg != null && rows.share.chg < -0.5;
-  h += `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(midLbl)}</h2><span class="desc">일평균 · 베이스라인 ${ymd(F.b0)}~${ymd(F.b1)} ${compo(rg.base)} → 최근 ${ymd(F.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</span></div>
-    <div class="tiles">${['ord', 'fp', 'share'].map(k => {
-      const r = rows[k], kind = k === 'share' ? 'ratio' : 'count', nm = { ord: '주문고객', fp: '첫구매', share: '첫구매 비중' }[k];
-      return `<div class="tile"><div class="t-l">${nm} · 최근</div><div class="t-v">${C.fmt(kind, r.recent, { dp: 1 })}<small>${kind === 'ratio' ? '' : '명/일'}</small></div>
-        <div class="t-r"><span>베이스라인 <b>${C.fmt(kind, r.base, { dp: 1 })}</b></span><span class="${clsP(r.chg)}">${sgn(r.chg)}</span></div>
-        <div class="t-r"><span>기대치 <b>${C.fmt(kind, r.exp, { dp: 1 })}</b></span><span class="${clsP(r.vsExp)}">${sgn(r.vsExp)}</span></div>
-        <div class="t-r"><span>요일보정 <b>${C.fmt(kind, r.expAdj, { dp: 1 })}</b></span><span class="${clsP(r.vsExpAdj)}">${sgn(r.vsExpAdj)}</span></div></div>`;
+  // 비중 판정은 계절 기대치(요일 보정 우선) 대비, 기대치가 없으면 베이스라인 대비
+  const shareRef = rows.share.vsExpAdj ?? rows.share.vsExp ?? rows.share.chg;
+  const shareBad = shareRef != null && shareRef < -0.5;
+  const uvP = rows.uv.chg, crP = rows.cr.chg;
+  h += `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">일평균 · 비율은 합계 ÷ 합계</span></div>
+    <div class="tiles">${DG_ROWS.map(d => {
+      const r = rows[d.k];
+      return `<div class="tile"><div class="t-l">${d.n} · 최근${d.sub ? ` <span class="hint">${d.sub}</span>` : ''}</div><div class="t-v">${dgFmt(d.kind, r.recent)}<small>${d.kind === 'ratio' ? '' : '명/일'}</small></div>
+        <div class="t-r"><span>베이스라인 <b>${dgFmt(d.kind, r.base)}</b></span><span class="${clsP(r.chg)}">${sgn(r.chg)}</span></div>
+        <div class="t-r"><span>기대치 <b>${dgFmt(d.kind, r.exp)}</b></span><span class="${clsP(r.vsExp)}">${sgn(r.vsExp)}</span></div>
+        <div class="t-r"><span>요일보정 <b>${dgFmt(d.kind, r.expAdj)}</b></span><span class="${clsP(r.vsExpAdj)}">${sgn(r.vsExpAdj)}</span></div></div>`;
     }).join('')}</div>
-    <div class="card pad judge" style="margin-top:12px">${judge('fp', '첫구매')}${judge('ord', '주문고객')}${judge('share', '첫구매 비중')}
-      <div class="l3">&gt; ${shareBad ? '첫구매 비중 하락 → 악화로 판정. 원인은 아래 구성 효과(브랜드·캠페인·이벤트) 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : '비중 하락 없음 — 채널별 드릴다운에서 기대치 대비 낮은 항목 확인'}</div>
-      <div class="hint">계절 기대치 = 베이스라인 × (${esc(F.refY)}년 ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} 증감). 비교 연도 구성: 베이스라인 ${compo(rg.refBase)} · 최근 ${compo(rg.refRecent)}. 요일 보정 = 베이스라인을 평일 / 주말·휴일 평균으로 나눠 최근 구간의 요일 구성으로 다시 가중(비교 연도도 같은 방식).</div></div></section>`;
+    <div class="card pad judge" style="margin-top:12px">${judge('fp', '첫구매')}${judge('share', '첫구매 비중')}${judge('buy', '구매고객')}
+      <div class="h" style="margin-top:4px">ㄴ 첫구매 변화 = 유입(UV) ${sgn(uvP)} × 전환율(첫구매 ÷ UV) ${sgn(crP)}</div>
+      <div class="l3">&gt; ${shareBad ? `첫구매 비중 ${rows.share.exp != null ? '기대치 대비' : '베이스라인 대비'} 하락 → 악화로 판정.` + ' 아래 구성 효과(브랜드/기획전 · 캠페인 · 디바이스) 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : '첫구매 비중 하락 없음 — 드릴다운에서 기대치 대비 낮은 항목 확인'}${uvP != null && crP != null ? (Math.abs(crP) > Math.abs(uvP) ? ' · 첫구매 변화는 전환율 쪽이 더 큼' : ' · 첫구매 변화는 유입(UV) 쪽이 더 큼') : ''}</div>
+      <div class="hint">계절 기대치 = 베이스라인 × (비교 연도 같은 날짜 구간의 최근 ÷ 베이스라인). 요일 보정 = 베이스라인을 평일 / 주말·휴일 평균으로 나눠 최근 구간의 요일 구성으로 다시 가중(비교 연도도 같은 방식).</div></div></section>`;
 
-  // 24 vs 26 월별
-  h += `<section><div class="sec-h"><h2>${esc(F.refY)}년 vs ${curY}년 월별 첫구매 · ${esc(midLbl)}</h2><span class="desc">월 일평균 · 진행 중인 월은 두 해 모두 같은 일자(1일~N일)까지</span><div class="tools"><button class="btn" data-csv-for="afMon" data-name="AF_월별_${F.refY}_${curY}">CSV</button></div></div>
-    <div class="row2"><div class="card cc"><div class="cc-t">첫구매 일평균</div><div class="cc-b" id="afMonFp"></div></div><div class="card cc"><div class="cc-t">첫구매 비중 (첫구매 ÷ 주문)</div><div class="cc-b" id="afMonSh"></div></div></div>
-    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="afMon"></table></div></section>`;
+  h += `<section><div class="sec-h"><h2>${esc(F.refY)}년 vs ${rg.curY}년 월별 · ${esc(filt)}</h2><span class="desc">월 일평균 · 진행 중인 월은 두 해 모두 같은 일자(1일~N일)까지</span><div class="tools"><button class="btn" data-csv-for="dgMon" data-name="첫구매진단_월별_${F.refY}_${rg.curY}">CSV</button></div></div>
+    <div class="row2"><div class="card cc"><div class="cc-t">첫구매 일평균</div><div class="cc-b" id="dgMonFp"></div></div><div class="card cc"><div class="cc-t">첫구매 비중 (첫구매 ÷ 구매고객)</div><div class="cc-b" id="dgMonSh"></div></div></div>
+    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgMon"></table></div></section>`;
 
-  // 드릴다운
-  h += `<section><div class="sec-h"><h2>채널·매체 드릴다운 · 베이스라인 vs 최근</h2><span class="desc">중분류 › 소분류 › 브랜드 › 캠페인 · 일평균 · 계절 = ${esc(F.refY)}년 같은 구간 첫구매 증감</span><div class="tools"><button class="lnk" id="afFold" type="button">모두 접기</button><button class="btn" data-csv-for="afTree" data-name="AF_드릴다운">CSV</button></div></div>
-    <div class="card tbl-wrap"><table class="grid" id="afTree"></table></div></section>`;
+  const avail = DIAG_DIMS.filter(k => R.dims[k]);
+  F.dims = F.dims.filter(d => avail.includes(d));
+  if (!F.dims.length) F.dims = ['t', 'md', 'camp'];
+  const dimSel = L => `<select data-dgdim="${L}" aria-label="${L + 1}단계">${L > 0 ? '<option value="">(없음)</option>' : ''}${avail.map(k => `<option value="${k}"${F.dims[L] === k ? ' selected' : ''}>${DIM_NAME[k]}</option>`).join('')}</select>`;
+  h += `<section><div class="sec-h"><h2>드릴다운 · 베이스라인 vs 최근</h2><span class="desc">일평균 · 계절 = ${esc(F.refY)}년 같은 구간 첫구매 증감</span><div class="tools"><button class="lnk" id="dgFold" type="button">모두 접기</button><button class="btn" data-csv-for="dgTree" data-name="첫구매진단_드릴다운">CSV</button></div></div>
+    <div class="card pad" style="margin-bottom:12px"><span class="field">단계 ${[0, 1, 2, 3].map(dimSel).join(' › ')}</span> <span class="hint">디바이스를 넣으면 APP 결제 쪽 변화를 따로 볼 수 있다</span></div>
+    <div class="card tbl-wrap"><table class="grid" id="dgTree"></table></div></section>`;
 
-  // 브랜드 구성 효과
-  const mids = A.dims.mid;
-  if (!F.brandMid || !mids.includes(F.brandMid)) F.brandMid = mids.includes('BSA') ? 'BSA' : mids[0];
-  h += `<section><div class="sec-h"><h2>브랜드 구성 효과 분해</h2><span class="desc">비중 변화를 구성(mix) 효과와 브랜드 내부(within) 효과로 나눈다 — 하락 원인으로 '앱 이용자 누적'을 쓰지 않는다</span></div>
+  const types = R.dims.t;
+  if (F.compType && !types.includes(F.compType)) F.compType = '';
+  if (!avail.includes(F.compDim)) F.compDim = avail.includes('bp') ? 'bp' : 'camp';
+  h += `<section><div class="sec-h"><h2>구성 효과 분해</h2><span class="desc">첫구매 비중 변화를 구성(mix) 효과와 항목 내부(within) 효과로 나눈다 — 하락 원인으로 '앱 이용자 누적'을 쓰지 않는다</span></div>
     <div class="card pad"><div class="bar2" style="padding:0">
-      <label class="field">중분류 <select id="afBrMid">${mids.map(x => `<option${x === F.brandMid ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-      <label class="field"><input type="checkbox" id="afExSeason"${F.exSeason ? ' checked' : ''}> 시즌 브랜드 제외</label>
-      <label class="field" style="flex:1;min-width:260px">시즌 브랜드 <input type="text" id="afSeason" style="flex:1" value="${esc(F.season)}" placeholder="쉼표로 구분"></label>
+      <label class="field">광고유형 <select id="dgCompType"><option value="">전체(필터 기준)</option>${types.map(x => `<option${x === F.compType ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+      <label class="field">구성 기준 <select id="dgCompDim">${avail.filter(k => k !== 't').map(k => `<option value="${k}"${F.compDim === k ? ' selected' : ''}>${DIM_NAME[k]}</option>`).join('')}</select></label>
+      <label class="field"><input type="checkbox" id="dgExSeason"${F.exSeason ? ' checked' : ''}> 시즌 항목 제외</label>
+      <label class="field" style="flex:1;min-width:260px">시즌 항목 <input type="text" id="dgSeason" style="flex:1" value="${esc(F.season)}" placeholder="쉼표로 구분 (구성 기준 값과 같은 이름)"></label>
     </div></div>
-    <div class="row2" style="margin-top:12px"><div class="card cc"><div class="cc-t">첫구매 일평균 증감 폭포</div><div class="cc-s">베이스라인 → 브랜드별 증감 → 최근</div><div class="cc-b" id="afWf"></div></div><div class="card pad judge" id="afMix"></div></div>
-    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="afBr"></table></div>
-    <div class="sec-h"><h2 style="font-size:13px">월별 비중 — 시즌 브랜드 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="afBrMon" data-name="AF_시즌브랜드_월별">CSV</button></div></div>
-    <div class="card tbl-wrap"><table class="grid" id="afBrMon"></table></div></section>
+    <div class="row2" style="margin-top:12px"><div class="card cc"><div class="cc-t">첫구매 일평균 증감 폭포</div><div class="cc-s">베이스라인 → 항목별 증감 → 최근</div><div class="cc-b" id="dgWf"></div></div><div class="card pad judge" id="dgMix"></div></div>
+    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div>
+    <div class="sec-h"><h2 style="font-size:13px">월별 첫구매 비중 — 시즌 항목 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="dgBrMon" data-name="첫구매진단_시즌_월별">CSV</button></div></div>
+    <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
+      <li>구매고객 = 총결제고객수 · 첫구매 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매 전환율 = 첫구매 ÷ UV(전체)</li>
       <li>"개선 없음" ≠ "유지": 계절 기대치를 못 넘으면 "기대치 대비 -x%", 비중이 내려가면 악화로 판정</li>
-      <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 먼저 구성 효과(브랜드·캠페인·이벤트)를 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
-      <li>모든 비교는 일평균, 기간 일수·요일 구성 명시. 부분월·당일 미확정 데이터 제외 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
+      <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
+      <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시. 부분월 제외 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
   main.innerHTML = h;
 
-  renderAfMonthly(curY);
-  renderAfTree(rg);
-  renderAfBrand(rg);
+  renderDgMonthly(rg, series);
+  renderDgTree(rg);
+  renderDgComp(rg);
 }
-function renderAfMonthly(curY) {
-  const F = S.af, valid = afValid();
-  const s = C.daily(A, { where: afWhere() }).get('_') || C.addSeries([], C.AF_METS, A.dates.length);
+function renderDgMonthly(rg, s) {
+  const F = S.diag, curY = rg.curY, valid = rg.valid;
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  // 진행 중인 월(데이터 마지막 날이 월말 전)은 두 해 모두 같은 일자까지만 비교
-  const lastOk = afLastOk(), lastY = +lastOk.slice(0, 4), lastM = +lastOk.slice(5, 7), lastD = +lastOk.slice(8, 10);
+  const lastOk = dgLastOk(), lastY = +lastOk.slice(0, 4), lastM = +lastOk.slice(5, 7), lastD = +lastOk.slice(8, 10);
   const partialM = lastY === curY && lastD < C.monthDays(lastY, lastM) ? lastM : 0;
   const mv = y => months.map(m => {
     const end = m === partialM ? Math.min(lastD, C.monthDays(y, m)) : C.monthDays(y, m);
-    const a = `${y}-${String(m).padStart(2, '0')}-01`, b = `${y}-${String(m).padStart(2, '0')}-${String(end).padStart(2, '0')}`;
-    const idx = C.rangeIdx(A, a, b, valid), o = C.avgOf(s, idx, ['ord', 'fp']);
-    return { days: idx.length, ord: o.ord, fp: o.fp, sh: C.div(o.fp, o.ord) };
+    const mm = String(m).padStart(2, '0');
+    const idx = C.rangeIdx(R, `${y}-${mm}-01`, `${y}-${mm}-${String(end).padStart(2, '0')}`, valid), o = C.avgOf(s, idx, ['buy', 'fp', 'uv']);
+    return { days: idx.length, buy: o.buy, fp: o.fp, sh: C.div(o.fp, o.buy), cr: C.div(o.fp, o.uv) };
   });
   const ry = mv(F.refY), cy = mv(curY);
   const labels = months.map(m => m + '월');
-  lineChart($id('afMonFp'), { labels, kind: 'count', unit: '명/일', h: 200, label: '첫구매 일평균 연도 비교',
+  lineChart($id('dgMonFp'), { labels, kind: 'count', unit: '명/일', h: 200, label: '첫구매 일평균 연도 비교',
     series: [{ name: `${F.refY}년`, color: '--prev', values: ry.map(r => r.days ? r.fp : null) }, { name: `${curY}년`, color: '--c1', values: cy.map(r => r.days ? r.fp : null) }] });
-  lineChart($id('afMonSh'), { labels, kind: 'ratio', unit: '%', h: 200, label: '첫구매 비중 연도 비교',
+  lineChart($id('dgMonSh'), { labels, kind: 'ratio', unit: '%', h: 200, label: '첫구매 비중 연도 비교',
     series: [{ name: `${F.refY}년`, color: '--prev', values: ry.map(r => r.days ? r.sh : null) }, { name: `${curY}년`, color: '--c1', values: cy.map(r => r.days ? r.sh : null) }] });
-  const td = (v, k) => `<td>${v == null ? '–' : (k === 'sh' ? C.fmt('ratio', v, { dp: 1 }) : C.fmtNum(v, 1))}</td>`;
-  $id('afMon').innerHTML = `<thead><tr><th>월</th><th class="grp" colspan="4">${F.refY}년</th><th class="grp" colspan="4">${curY}년</th><th class="grp" colspan="3">${curY} vs ${F.refY}</th></tr>
-    <tr><th></th><th>일수</th><th>주문</th><th>첫구매</th><th>비중</th><th class="bl">일수</th><th>주문</th><th>첫구매</th><th>비중</th><th class="bl">주문</th><th>첫구매</th><th>비중</th></tr></thead><tbody>${months.map((m, i) => {
+  const td = (v, k) => `<td>${v == null ? '–' : (k ? dgFmt('ratio', v) : C.fmtNum(v, 1))}</td>`;
+  const dd = (b, a) => { const p = C.pct(b, a); return `<td class="${clsP(p)}">${sgn(p)}</td>`; };
+  $id('dgMon').innerHTML = `<thead><tr><th>월</th><th class="grp" colspan="5">${F.refY}년</th><th class="grp" colspan="5">${curY}년</th><th class="grp" colspan="3">${curY} vs ${F.refY}</th></tr>
+    <tr><th></th><th>일수</th><th>구매고객</th><th>첫구매</th><th>비중</th><th>전환율</th><th class="bl">일수</th><th>구매고객</th><th>첫구매</th><th>비중</th><th>전환율</th><th class="bl">구매고객</th><th>첫구매</th><th>비중</th></tr></thead><tbody>${months.map((m, i) => {
       const a = ry[i], b = cy[i];
       if (!a.days && !b.days) return '';
-      return `<tr><td>${m}월</td><td>${a.days || '–'}</td>${td(a.days ? a.ord : null)}${td(a.days ? a.fp : null)}${td(a.days ? a.sh : null, 'sh')}<td class="bl">${b.days || '–'}</td>${td(b.days ? b.ord : null)}${td(b.days ? b.fp : null)}${td(b.days ? b.sh : null, 'sh')}
-        <td class="bl ${clsP(C.pct(b.ord, a.ord))}">${a.days && b.days ? sgn(C.pct(b.ord, a.ord)) : '–'}</td><td class="${clsP(C.pct(b.fp, a.fp))}">${a.days && b.days ? sgn(C.pct(b.fp, a.fp)) : '–'}</td><td class="${clsP(C.pct(b.sh, a.sh))}">${a.days && b.days ? sgn(C.pct(b.sh, a.sh)) : '–'}</td></tr>`;
+      const A_ = a.days ? a : {}, B_ = b.days ? b : {};
+      return `<tr><td>${m}월</td><td>${a.days || '–'}</td>${td(A_.buy)}${td(A_.fp)}${td(A_.sh, 1)}${td(A_.cr, 1)}<td class="bl">${b.days || '–'}</td>${td(B_.buy)}${td(B_.fp)}${td(B_.sh, 1)}${td(B_.cr, 1)}
+        ${a.days && b.days ? `${dd(b.buy, a.buy).replace('<td class="', '<td class="bl ')}${dd(b.fp, a.fp)}${dd(b.sh, a.sh)}` : '<td class="bl">–</td><td>–</td><td>–</td>'}</tr>`;
     }).join('')}</tbody>`;
 }
-function renderAfTree(rg) {
-  const F = S.af, dims = ['mid', 'sub', 'brand', 'camp'];
-  const t = C.tree(A, { where: afWhere(), dims, sets: [rg.base, rg.recent, rg.refBase, rg.refRecent], mets: ['ord', 'fp'] });
+function renderDgTree(rg) {
+  const F = S.diag, dims = F.dims;
+  const t = C.tree(R, { where: dgWhere(), dims, sets: [rg.base, rg.recent, rg.refBase, rg.refRecent], mets: ['buy', 'fp', 'uv'] });
   const d = t.days, open = new Set(F.open);
   const av = (s, k, n) => n ? s[k] / n : null;
   const cells = s => {
-    const bo = av(s[0], 'ord', d[0]), ro = av(s[1], 'ord', d[1]), bf = av(s[0], 'fp', d[0]), rf = av(s[1], 'fp', d[1]);
-    const bs = C.div(s[0].fp, s[0].ord), rs = C.div(s[1].fp, s[1].ord);
+    const bo = av(s[0], 'buy', d[0]), ro = av(s[1], 'buy', d[1]), bf = av(s[0], 'fp', d[0]), rf = av(s[1], 'fp', d[1]);
+    const bs = C.div(s[0].fp, s[0].buy), rs = C.div(s[1].fp, s[1].buy), bc = C.div(s[0].fp, s[0].uv), rc = C.div(s[1].fp, s[1].uv);
     const season = C.pct(av(s[3], 'fp', d[3]), av(s[2], 'fp', d[2]));
     const exp = bf != null && season != null ? bf * (1 + season / 100) : null, vs = C.pct(rf, exp);
-    return `<td>${C.fmtNum(bo, 1)}</td><td>${C.fmtNum(ro, 1)}</td><td class="${clsP(C.pct(ro, bo))}">${sgn(C.pct(ro, bo))}</td>
-      <td class="bl">${C.fmtNum(bf, 1)}</td><td>${C.fmtNum(rf, 1)}</td><td class="${clsP(C.pct(rf, bf))}">${sgn(C.pct(rf, bf))}</td>
-      <td class="bl">${C.fmt('ratio', bs, { dp: 1 })}</td><td>${C.fmt('ratio', rs, { dp: 1 })}</td><td class="${clsP(C.pct(rs, bs))}">${sgn(C.pct(rs, bs))}</td>
+    const p = (a, b) => { const x = C.pct(b, a); return `<td class="${clsP(x)}">${sgn(x)}</td>`; };
+    return `<td>${C.fmtNum(bo, 1)}</td><td>${C.fmtNum(ro, 1)}</td>${p(bo, ro)}
+      <td class="bl">${C.fmtNum(bf, 1)}</td><td>${C.fmtNum(rf, 1)}</td>${p(bf, rf)}
+      <td class="bl">${dgFmt('ratio', bs)}</td><td>${dgFmt('ratio', rs)}</td>${p(bs, rs)}
+      <td class="bl">${dgFmt('ratio', bc)}</td><td>${dgFmt('ratio', rc)}</td>${p(bc, rc)}
       <td class="bl">${sgn(season)}</td><td class="${clsP(vs)}">${sgn(vs)}</td>`;
   };
   let body = '';
   const walk = (pk, L) => {
-    const kids = C.children(t, pk, L).filter(n => n.s[0].ord + n.s[1].ord + n.s[0].fp + n.s[1].fp !== 0)
+    const kids = C.children(t, pk, L).filter(n => n.s[0].buy + n.s[1].buy + n.s[0].fp + n.s[1].fp !== 0)
       .sort((a, b) => (b.s[0].fp / (d[0] || 1) + b.s[1].fp / (d[1] || 1)) - (a.s[0].fp / (d[0] || 1) + a.s[1].fp / (d[1] || 1)));
     for (const n of kids) {
       const can = L < dims.length - 1, isO = can && open.has(n.key);
-      body += `<tr><td style="padding-left:${10 + L * 18}px" data-csv="${esc('  '.repeat(L) + n.v)}">${can ? `<button class="tw" data-aftw="${esc(n.key)}" aria-expanded="${isO}">${isO ? '▾' : '▸'}</button>` : '<span class="tw"></span>'}<span class="lv">${AF_DIM_NAME[n.dim]}</span>${esc(n.v)}</td>${cells(n.s)}</tr>`;
+      body += `<tr><td style="padding-left:${10 + L * 18}px" data-csv="${esc('  '.repeat(L) + n.v)}">${can ? `<button class="tw" data-dgtw="${esc(n.key)}" aria-expanded="${isO}">${isO ? '▾' : '▸'}</button>` : '<span class="tw"></span>'}<span class="lv">${DIM_NAME[n.dim]}</span>${esc(n.v)}</td>${cells(n.s)}</tr>`;
       if (isO) walk(n.key, L + 1);
     }
   };
   walk('', 0);
-  $id('afTree').innerHTML = `<thead><tr><th></th><th class="grp" colspan="3">주문고객 /일</th><th class="grp" colspan="3">첫구매 /일</th><th class="grp" colspan="3">첫구매 비중</th><th class="grp" colspan="2">계절</th></tr>
-    <tr><th>항목</th><th>베이스</th><th>최근</th><th>증감</th><th class="bl">베이스</th><th>최근</th><th>증감</th><th class="bl">베이스</th><th>최근</th><th>증감</th><th class="bl">${F.refY}년</th><th>기대치 대비</th></tr></thead>
+  $id('dgTree').innerHTML = `<thead><tr><th></th><th class="grp" colspan="3">구매고객 /일</th><th class="grp" colspan="3">첫구매 /일</th><th class="grp" colspan="3">첫구매 비중</th><th class="grp" colspan="3">첫구매 전환율</th><th class="grp" colspan="2">계절</th></tr>
+    <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th><th>베이스</th><th>최근</th><th>증감</th><th class="bl">베이스</th><th>최근</th><th>증감</th><th class="bl">베이스</th><th>최근</th><th>증감</th><th class="bl">베이스</th><th>최근</th><th>증감</th><th class="bl">${F.refY}년</th><th>기대치 대비</th></tr></thead>
     <tbody><tr class="tot"><td>합계</td>${cells(t.total)}</tr>${body}</tbody>`;
 }
-function seasonList() { return S.af.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
-function renderAfBrand(rg) {
-  const F = S.af, mi = A.dims.mid.indexOf(F.brandMid);
-  const season = new Set(seasonList());
-  const where = { mid: new Set([F.brandMid]) };
-  const t = C.tree(A, { where, dims: ['brand'], sets: [rg.base, rg.recent], mets: ['ord', 'fp'] });
+function seasonList() { return S.diag.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
+function renderDgComp(rg) {
+  const F = S.diag, dim = F.compDim, season = new Set(seasonList());
+  const where = { ...dgWhere(), ...(F.compType ? { t: new Set([F.compType]) } : {}) };
+  const t = C.tree(R, { where, dims: [dim], sets: [rg.base, rg.recent], mets: ['buy', 'fp'] });
   const d = t.days;
-  let items = [...t.nodes.values()].map(n => ({ name: n.v, season: season.has(n.v), b: { ord: n.s[0].ord / (d[0] || 1), fp: n.s[0].fp / (d[0] || 1) }, r: { ord: n.s[1].ord / (d[1] || 1), fp: n.s[1].fp / (d[1] || 1) } }));
+  let items = [...t.nodes.values()].map(n => ({ name: n.v, season: season.has(n.v), b: { buy: n.s[0].buy / (d[0] || 1), fp: n.s[0].fp / (d[0] || 1) }, r: { buy: n.s[1].buy / (d[1] || 1), fp: n.s[1].fp / (d[1] || 1) } }));
   if (F.exSeason) items = items.filter(x => !x.season);
   const dec = C.mixDecompose(items);
   const rows = dec.rows.sort((a, b) => Math.abs(b.dfp) - Math.abs(a.dfp));
-  // 폭포: 상위 8 + 기타
   const top = rows.slice(0, 8), rest = rows.slice(8);
   const wf = [{ name: '베이스라인', v: dec.F0, total: true }, ...top.map(r => ({ name: r.name + (r.season ? ' ☀' : ''), v: r.dfp }))];
   if (rest.length) wf.push({ name: `기타 ${rest.length}개`, v: rest.reduce((a, r) => a + r.dfp, 0) });
   wf.push({ name: '최근', v: dec.F1, total: true });
-  waterfall($id('afWf'), wf, { label: '브랜드별 첫구매 증감' });
-  const sF0 = rows.filter(r => r.season).reduce((a, r) => a + r.b.fp, 0), sF1 = rows.filter(r => r.season).reduce((a, r) => a + r.r.fp, 0);
+  waterfall($id('dgWf'), wf, { label: '항목별 첫구매 증감' });
+  const sRows = rows.filter(r => r.season), sF0 = sRows.reduce((a, r) => a + r.b.fp, 0), sF1 = sRows.reduce((a, r) => a + r.r.fp, 0);
   const rel = v => dec.R0 ? sgn(v / dec.R0 * 100) : '–';
-  $id('afMix').innerHTML = `<div class="h">□ ${esc(F.brandMid)} 첫구매 비중 ${C.fmt('ratio', dec.R0, { dp: 1 })} → ${C.fmt('ratio', dec.R1, { dp: 1 })} (${sgn(C.pct(dec.R1, dec.R0))})${F.exSeason ? ' · 시즌 브랜드 제외' : ''}</div>
-    <div class="l2">첫구매 ${C.fmtNum(dec.F0, 1)} → ${C.fmtNum(dec.F1, 1)}명/일 (${sgn(C.pct(dec.F1, dec.F0))}) · 주문 ${C.fmtNum(dec.O0, 1)} → ${C.fmtNum(dec.O1, 1)} (${sgn(C.pct(dec.O1, dec.O0))})</div>
+  const scope = `${F.compType || '필터 유형 전체'} · ${DIM_NAME[dim]}`;
+  $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} 첫구매 비중 ${dgFmt('ratio', dec.R0)} → ${dgFmt('ratio', dec.R1)} (${sgn(C.pct(dec.R1, dec.R0))})${F.exSeason ? ' · 시즌 항목 제외' : ''}</div>
+    <div class="l2">첫구매 ${C.fmtNum(dec.F0, 1)} → ${C.fmtNum(dec.F1, 1)}명/일 (${sgn(C.pct(dec.F1, dec.F0))}) · 구매고객 ${C.fmtNum(dec.O0, 1)} → ${C.fmtNum(dec.O1, 1)} (${sgn(C.pct(dec.O1, dec.O0))})</div>
     <div class="h" style="margin-top:6px">ㄴ 비중 변화 분해 (베이스라인 비중 대비)</div>
-    <div class="l2">구성 효과(브랜드 주문 비중 변화) <b class="${clsP(dec.mix)}">${rel(dec.mix)}</b> · 브랜드 내부 효과(같은 브랜드의 첫구매 비중 변화) <b class="${clsP(dec.within)}">${rel(dec.within)}</b></div>
-    ${!F.exSeason && season.size ? `<div class="l2">시즌 브랜드(${esc([...season].join('·'))}) 첫구매 ${C.fmtNum(sF0, 1)} → ${C.fmtNum(sF1, 1)}명/일 · 베이스라인 첫구매의 ${C.fmt('ratio', C.div(sF0, dec.F0), { dp: 1 })} → 최근 ${C.fmt('ratio', C.div(sF1, dec.F1), { dp: 1 })}</div>` : ''}
-    <div class="l3">&gt; ${Math.abs(dec.mix) > Math.abs(dec.within) ? '구성 효과가 더 큼 — 브랜드·캠페인 구성 변화(시즌 종료 등)가 주원인으로 추정' : '내부 효과가 더 큼 — 구성 변화로 설명되지 않는 비중 하락, 트래킹·전환 이슈 가능성 有'}</div>`;
-  $id('afBr').innerHTML = `<thead><tr><th>브랜드</th><th>첫구매 베이스</th><th>첫구매 최근</th><th>Δ첫구매</th><th>Δ 기여</th><th class="bl">주문 베이스</th><th>주문 최근</th><th class="bl">비중 베이스</th><th>비중 최근</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
-    <tr class="tot"><td>합계</td><td>${C.fmtNum(dec.F0, 1)}</td><td>${C.fmtNum(dec.F1, 1)}</td><td>${C.fmtNum(dec.F1 - dec.F0, 1)}</td><td>100%</td><td class="bl">${C.fmtNum(dec.O0, 1)}</td><td>${C.fmtNum(dec.O1, 1)}</td><td class="bl">${C.fmt('ratio', dec.R0, { dp: 1 })}</td><td>${C.fmt('ratio', dec.R1, { dp: 1 })}</td><td class="bl">${rel(dec.mix)}</td><td>${rel(dec.within)}</td></tr>
+    <div class="l2">구성 효과(항목별 구매고객 비중 변화) <b class="${clsP(dec.mix)}">${rel(dec.mix)}</b> · 내부 효과(같은 항목의 첫구매 비중 변화) <b class="${clsP(dec.within)}">${rel(dec.within)}</b></div>
+    ${!F.exSeason && sRows.length ? `<div class="l2">시즌 항목(${esc(sRows.map(r => r.name).join('·'))}) 첫구매 ${C.fmtNum(sF0, 1)} → ${C.fmtNum(sF1, 1)}명/일 · 베이스라인 첫구매의 ${dgFmt('ratio', C.div(sF0, dec.F0))} → 최근 ${dgFmt('ratio', C.div(sF1, dec.F1))}</div>` : ''}
+    ${!F.exSeason && season.size && !sRows.length ? `<div class="l2 hint">시즌 항목 이름이 '${esc(DIM_NAME[dim])}' 값과 하나도 맞지 않습니다</div>` : ''}
+    <div class="l3">&gt; ${Math.abs(dec.mix) > Math.abs(dec.within) ? '구성 효과가 더 큼 — 구성 변화(시즌 종료 · 캠페인 · 이벤트)가 주원인으로 추정' : '내부 효과가 더 큼 — 구성 변화로 설명되지 않는 비중 하락, 트래킹 · 전환 이슈 가능성 有'}</div>`;
+  $id('dgBr').innerHTML = `<thead><tr><th>${esc(DIM_NAME[dim])}</th><th>첫구매 베이스</th><th>첫구매 최근</th><th>Δ첫구매</th><th>Δ 기여</th><th class="bl">구매고객 베이스</th><th>구매고객 최근</th><th class="bl">비중 베이스</th><th>비중 최근</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
+    <tr class="tot"><td>합계</td><td>${C.fmtNum(dec.F0, 1)}</td><td>${C.fmtNum(dec.F1, 1)}</td><td>${C.fmtNum(dec.F1 - dec.F0, 1)}</td><td>100%</td><td class="bl">${C.fmtNum(dec.O0, 1)}</td><td>${C.fmtNum(dec.O1, 1)}</td><td class="bl">${dgFmt('ratio', dec.R0)}</td><td>${dgFmt('ratio', dec.R1)}</td><td class="bl">${rel(dec.mix)}</td><td>${rel(dec.within)}</td></tr>
     ${rows.map(r => `<tr><td>${esc(r.name)}${r.season ? ' <span class="lv">시즌</span>' : ''}</td><td>${C.fmtNum(r.b.fp, 1)}</td><td>${C.fmtNum(r.r.fp, 1)}</td><td class="${clsP(r.dfp)}">${r.dfp > 0 ? '+' : ''}${C.fmtNum(r.dfp, 1)}</td><td>${dec.F1 - dec.F0 ? C.fmt('ratio', r.dfp / (dec.F1 - dec.F0), { dp: 0 }) : '–'}</td>
-      <td class="bl">${C.fmtNum(r.b.ord, 1)}</td><td>${C.fmtNum(r.r.ord, 1)}</td><td class="bl">${C.fmt('ratio', r.r0, { dp: 1 })}</td><td>${C.fmt('ratio', r.r1, { dp: 1 })}</td><td class="bl ${clsP(r.mix)}">${rel(r.mix)}</td><td class="${clsP(r.within)}">${rel(r.within)}</td></tr>`).join('')}</tbody>`;
+      <td class="bl">${C.fmtNum(r.b.buy, 1)}</td><td>${C.fmtNum(r.r.buy, 1)}</td><td class="bl">${dgFmt('ratio', r.r0)}</td><td>${dgFmt('ratio', r.r1)}</td><td class="bl ${clsP(r.mix)}">${rel(r.mix)}</td><td class="${clsP(r.within)}">${rel(r.within)}</td></tr>`).join('')}</tbody>`;
 
   // 월별 비중 — 베이스라인 시작 월부터 최근 월까지
-  const valid = rg.valid, s = C.daily(A, { where, group: i => season.has(A.dims.brand[A.f.brand[i]]) ? 's' : 'o' });
-  const nd = A.dates.length, Ss = s.get('s') || C.addSeries([], C.AF_METS, nd), So = s.get('o') || C.addSeries([], C.AF_METS, nd);
+  const valid = rg.valid, col = R.f[dim], vals = R.dims[dim];
+  const s = C.daily(R, { where, group: i => season.has(vals[col[i]]) ? 's' : 'o' });
+  const nd = R.dates.length, Ss = s.get('s') || C.addSeries([], C.ROW_METS, nd), So = s.get('o') || C.addSeries([], C.ROW_METS, nd);
   const months = [];
   let y = +F.b0.slice(0, 4), m = +F.b0.slice(5, 7);
   const endKey = rg.r1.slice(0, 7);
   while (`${y}-${String(m).padStart(2, '0')}` <= endKey && months.length < 24) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
   const cols = months.map(([yy, mm]) => {
-    const idx = C.rangeIdx(A, `${yy}-${String(mm).padStart(2, '0')}-01`, `${yy}-${String(mm).padStart(2, '0')}-${C.monthDays(yy, mm)}`, valid);
-    const a = C.sumIdx(Ss, idx, ['ord', 'fp']), o = C.sumIdx(So, idx, ['ord', 'fp']);
-    return { lbl: `${String(yy).slice(2)}.${String(mm).padStart(2, '0')}`, n: idx.length, all: C.div(a.fp + o.fp, a.ord + o.ord), ex: C.div(o.fp, o.ord), sf: C.div(a.fp, a.fp + o.fp), sfn: idx.length ? a.fp / idx.length : null };
+    const p2 = String(mm).padStart(2, '0');
+    const idx = C.rangeIdx(R, `${yy}-${p2}-01`, `${yy}-${p2}-${C.monthDays(yy, mm)}`, valid);
+    const a = C.sumIdx(Ss, idx, ['buy', 'fp']), o = C.sumIdx(So, idx, ['buy', 'fp']);
+    return { lbl: `${String(yy).slice(2)}.${p2}`, n: idx.length, all: C.div(a.fp + o.fp, a.buy + o.buy), ex: C.div(o.fp, o.buy), sf: C.div(a.fp, a.fp + o.fp), sfn: idx.length ? a.fp / idx.length : null };
   });
-  $id('afBrMon').innerHTML = `<thead><tr><th>${esc(F.brandMid)}</th>${cols.map(c => `<th>${c.lbl}<span class="sub">${c.n}일</span></th>`).join('')}</tr></thead><tbody>
-    <tr><td>첫구매 비중 (전체)</td>${cols.map(c => `<td>${C.fmt('ratio', c.all, { dp: 1 })}</td>`).join('')}</tr>
-    <tr class="tot"><td>첫구매 비중 (시즌 제외)</td>${cols.map(c => `<td>${C.fmt('ratio', c.ex, { dp: 1 })}</td>`).join('')}</tr>
-    <tr><td>시즌 브랜드 첫구매 /일</td>${cols.map(c => `<td>${C.fmtNum(c.sfn, 1)}</td>`).join('')}</tr>
-    <tr><td>시즌 브랜드 첫구매 점유</td>${cols.map(c => `<td>${C.fmt('ratio', c.sf, { dp: 1 })}</td>`).join('')}</tr></tbody>`;
+  $id('dgBrMon').innerHTML = `<thead><tr><th>${esc(scope)}</th>${cols.map(c => `<th>${c.lbl}<span class="sub">${c.n}일</span></th>`).join('')}</tr></thead><tbody>
+    <tr><td>첫구매 비중 (전체)</td>${cols.map(c => `<td>${dgFmt('ratio', c.all)}</td>`).join('')}</tr>
+    <tr class="tot"><td>첫구매 비중 (시즌 제외)</td>${cols.map(c => `<td>${dgFmt('ratio', c.ex)}</td>`).join('')}</tr>
+    <tr><td>시즌 항목 첫구매 /일</td>${cols.map(c => `<td>${C.fmtNum(c.sfn, 1)}</td>`).join('')}</tr>
+    <tr><td>시즌 항목 첫구매 점유</td>${cols.map(c => `<td>${dgFmt('ratio', c.sf)}</td>`).join('')}</tr></tbody>`;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -890,50 +901,44 @@ function renderAfBrand(rg) {
 // ════════════════════════════════════════════════════════════════════
 function syncBar() {
   document.querySelectorAll('[data-page]').forEach(b => b.setAttribute('aria-pressed', b.dataset.page === S.page));
-  document.querySelectorAll('[data-page="trend"],[data-page="drill"],[data-page="da"]').forEach(b => b.hidden = !R);
-  document.querySelector('[data-page="af"]').hidden = !A;
-  const isAf = S.page === 'af';
-  $id('barRow').hidden = isAf; $id('barAf').hidden = !isAf;
-  $id('filtRows').hidden = isAf || !S.filtOpen; $id('afFiltRows').hidden = !isAf || !S.af.filtOpen;
+  const isDg = S.page === 'diag';
+  $id('barRow').hidden = isDg; $id('barDg').hidden = !isDg;
+  $id('filtRows').hidden = !S.filtOpen;
   document.querySelectorAll('[data-set]').forEach(b => b.setAttribute('aria-pressed', S[b.dataset.set] === b.dataset.v));
   $id('viewSeg').hidden = S.page !== 'trend';
   $id('btnPop').textContent = ({ month: '전월', week: '전주', day: '전일' })[S.grain];
-  if (R && !isAf) {
-    const ps = plist(), ai = atIndex(ps);
-    $id('selAt').innerHTML = ps.map((p, i) => `<option value="${p.key}"${i === ai ? ' selected' : ''}>${esc(p.label)}${p.partial ? ' (진행 중)' : ''}</option>`).reverse().join('');
-    $id('selRange').innerHTML = RANGES[S.grain].map(([v, l]) => `<option value="${v}"${String(S.range[S.grain]) === String(v) ? ' selected' : ''}>${l}</option>`).join('');
-    const ts = new Set(selTypes());
-    $id('typeChips').innerHTML = R.dims.t.map(t => `<button class="chip" data-type="${esc(t)}" aria-pressed="${ts.has(t)}" style="--sw:var(${COLORS[t]})"><i></i>${esc(t)}</button>`).join('');
-    const ss = S.srcs ? new Set(S.srcs) : null;
-    $id('srcChips').innerHTML = R.dims.src.map(t => `<button class="chip" data-src="${esc(t)}" aria-pressed="${!ss || ss.has(t)}"><i></i>${esc(t)}</button>`).join('');
-    const fs = filterSummary(), nf = (S.types && S.types.length < C.TYPES.length ? 1 : 0) + (S.srcs ? 1 : 0);
-    $id('filtSum').textContent = fs || '광고유형 · 비용출처'; $id('filtN').hidden = !nf; $id('filtN').textContent = nf;
-    $id('btnFilt').setAttribute('aria-expanded', S.filtOpen);
+  if (!R) return;
+  const ps = plist(), ai = atIndex(ps);
+  $id('selAt').innerHTML = ps.map((p, i) => `<option value="${p.key}"${i === ai ? ' selected' : ''}>${esc(p.label)}${p.partial ? ' (진행 중)' : ''}</option>`).reverse().join('');
+  $id('selRange').innerHTML = RANGES[S.grain].map(([v, l]) => `<option value="${v}"${String(S.range[S.grain]) === String(v) ? ' selected' : ''}>${l}</option>`).join('');
+  const ts = new Set(selTypes());
+  $id('typeChips').innerHTML = R.dims.t.map(t => `<button class="chip" data-type="${esc(t)}" aria-pressed="${ts.has(t)}" style="--sw:var(${COLORS[t]})"><i></i>${esc(t)}</button>`).join('');
+  const ss = S.srcs ? new Set(S.srcs) : null;
+  $id('srcChips').innerHTML = R.dims.src.map(t => `<button class="chip" data-src="${esc(t)}" aria-pressed="${!ss || ss.has(t)}"><i></i>${esc(t)}</button>`).join('');
+  const fs = filterSummary(), nf = (S.types && S.types.length < C.TYPES.length ? 1 : 0) + (S.srcs ? 1 : 0);
+  for (const [sum, n, btn] of [['filtSum', 'filtN', 'btnFilt'], ['filtSum2', 'filtN2', 'btnFilt2']]) {
+    $id(sum).textContent = fs || '광고유형 · 비용출처'; $id(n).hidden = !nf; $id(n).textContent = nf;
+    $id(btn).setAttribute('aria-expanded', S.filtOpen);
   }
-  if (A && isAf) {
-    const F = S.af;
-    if (!F.r1) F.r1 = '';
-    $id('afB0').value = F.b0; $id('afB1').value = F.b1; $id('afR0').value = F.r0; $id('afR1').value = F.r1 || afLastOk();
-    const ys = afYears().filter(y => y !== +F.r0.slice(0, 4));
-    if (!ys.includes(F.refY) && ys.length) F.refY = ys[0];
-    $id('afRefY').innerHTML = ys.map(y => `<option${y === F.refY ? ' selected' : ''}>${y}</option>`).join('');
-    $id('afDropLast').checked = F.dropLast;
-    const ms = F.mids ? new Set(F.mids) : null;
-    $id('afMidChips').innerHTML = A.dims.mid.map(t => `<button class="chip" data-mid="${esc(t)}" aria-pressed="${!ms || ms.has(t)}"><i></i>${esc(t)}</button>`).join('');
-    $id('afFiltSum').textContent = F.mids ? F.mids.join('·') : '전체'; $id('afFiltN').hidden = !F.mids; $id('afFiltN').textContent = F.mids ? F.mids.length : '';
-    $id('btnAfFilt').setAttribute('aria-expanded', !!F.filtOpen);
+  if (isDg) {
+    const F = S.diag;
+    $id('dgB0').value = F.b0; $id('dgB1').value = F.b1; $id('dgR0').value = F.r0; $id('dgR1').value = F.r1 || dgLastOk();
+    const ys = dgYears().filter(y => y !== +F.r0.slice(0, 4));
+    if (!ys.includes(F.refY) && ys.length) F.refY = ys.includes(+F.r0.slice(0, 4) - 1) ? +F.r0.slice(0, 4) - 1 : ys[ys.length - 1];
+    $id('dgRefY').innerHTML = (ys.length ? ys : [F.refY]).map(y => `<option${y === F.refY ? ' selected' : ''}>${y}</option>`).join('');
+    $id('dgDropLast').checked = F.dropLast;
   }
 }
 let scrollKeep = null;
+const PAGES = { trend: renderTrend, drill: renderDrill, da: renderDA, diag: renderDiag };
 function render(keepScroll) {
   if (!P) return showEmpty();
-  if (S.page === 'af' && !A) S.page = 'trend';
-  if (S.page !== 'af' && !R) S.page = 'af';
+  if (!PAGES[S.page]) S.page = 'trend';
   syncBar();
   save();
   const y = window.scrollY, main = $id('main');
   try {
-    ({ trend: renderTrend, drill: renderDrill, da: renderDA, af: renderAF })[S.page](main);
+    PAGES[S.page](main);
   } catch (e) {
     console.error(e);
     main.innerHTML = `<div class="card pad warn" style="margin-top:24px">화면을 그리다 오류가 났습니다: ${esc(e.message)}</div>`;
@@ -954,10 +959,8 @@ document.addEventListener('click', e => {
   if (ds.quick === 'types-all') { S.types = null; render(true); return; }
   if (ds.quick === 'src-all') { S.srcs = null; render(true); return; }
   if (ds.quick === 'src-new') { S.srcs = R.dims.src.filter(s => s.startsWith('신규고객확대')); if (!S.srcs.length) S.srcs = null; render(true); return; }
-  if (ds.quick === 'mid-all') { S.af.mids = null; render(true); return; }
-  if (ds.mid != null) { let ms = new Set(S.af.mids || A.dims.mid); ms.has(ds.mid) ? ms.delete(ds.mid) : ms.add(ds.mid); if (!ms.size) ms = new Set([ds.mid]); S.af.mids = ms.size === A.dims.mid.length ? null : [...ms]; render(true); return; }
   if (t.id === 'btnFilt') { S.filtOpen = !S.filtOpen; syncBar(); save(); return; }
-  if (t.id === 'btnAfFilt') { S.af.filtOpen = !S.af.filtOpen; syncBar(); save(); return; }
+  if (t.id === 'btnFilt2') { S.filtOpen = !S.filtOpen; syncBar(); save(); return; }
   if (t.id === 'btnOpen') { $id('fileOpen').click(); return; }
   if (t.id === 'btnClear') { if (confirm('이 브라우저에 저장된 백업 데이터를 지울까요?')) { idbDel().then(() => { P = R = A = null; $id('btnClear').hidden = true; $id('asof').textContent = ''; showEmpty(); }); } return; }
   if (ds.tw != null) { const o = new Set(S.drill.open); o.has(ds.tw) ? o.delete(ds.tw) : o.add(ds.tw); S.drill.open = [...o]; render(true); return; }
@@ -965,9 +968,9 @@ document.addEventListener('click', e => {
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
   if (ds.dam) { S.da.metric = ds.dam; render(true); return; }
   if (ds.damd != null) { const s = new Set(S.da.media || []); s.has(ds.damd) ? s.delete(ds.damd) : s.add(ds.damd); S.da.media = [...s]; render(true); return; }
-  if (ds.aftw != null) { const o = new Set(S.af.open); o.has(ds.aftw) ? o.delete(ds.aftw) : o.add(ds.aftw); S.af.open = [...o]; render(true); return; }
-  if (t.id === 'afFold') { S.af.open = []; render(true); return; }
-  if (t.id === 'afReset') { const keep = { brandMid: S.af.brandMid, season: S.af.season }; S.af = { ...structuredClone(DEF.af), ...keep }; render(true); return; }
+  if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
+  if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }
+  if (t.id === 'dgReset') { const keep = { season: S.diag.season, dims: S.diag.dims, compType: S.diag.compType, compDim: S.diag.compDim }; S.diag = { ...structuredClone(DEF.diag), ...keep }; render(true); return; }
 });
 document.addEventListener('change', e => {
   const t = e.target;
@@ -979,12 +982,14 @@ document.addEventListener('change', e => {
   else if (t.id === 'drSmall') { S.drill.hideSmall = t.checked; render(true); }
   else if (t.id === 'drSort') { S.drill.sort = t.value; render(true); }
   else if (t.id === 'daKakao') { S.da.kakao = t.checked; render(true); }
-  else if (['afB0', 'afB1', 'afR0', 'afR1'].includes(t.id)) { if (t.value) { S.af[t.id.slice(2).toLowerCase()] = t.value; render(true); } }
-  else if (t.id === 'afRefY') { S.af.refY = +t.value; render(true); }
-  else if (t.id === 'afDropLast') { S.af.dropLast = t.checked; render(true); }
-  else if (t.id === 'afBrMid') { S.af.brandMid = t.value; render(true); }
-  else if (t.id === 'afExSeason') { S.af.exSeason = t.checked; render(true); }
-  else if (t.id === 'afSeason') { S.af.season = t.value; render(true); }
+  else if (['dgB0', 'dgB1', 'dgR0', 'dgR1'].includes(t.id)) { if (t.value) { S.diag[t.id.slice(2).toLowerCase()] = t.value; render(true); } }
+  else if (t.id === 'dgRefY') { S.diag.refY = +t.value; render(true); }
+  else if (t.id === 'dgDropLast') { S.diag.dropLast = t.checked; render(true); }
+  else if (t.dataset.dgdim != null) { const L = +t.dataset.dgdim, d = S.diag.dims.slice(); if (t.value) d[L] = t.value; else d.length = L; S.diag.dims = d.filter((x, i) => x && d.indexOf(x) === i); S.diag.open = []; render(true); }
+  else if (t.id === 'dgCompType') { S.diag.compType = t.value; render(true); }
+  else if (t.id === 'dgCompDim') { S.diag.compDim = t.value; render(true); }
+  else if (t.id === 'dgExSeason') { S.diag.exSeason = t.checked; render(true); }
+  else if (t.id === 'dgSeason') { S.diag.season = t.value; render(true); }
 });
 let qTimer = null;
 document.addEventListener('input', e => {

@@ -19,76 +19,83 @@ function buildSample() {
   const code = `import sys, json; sys.path.insert(0, ${JSON.stringify(ROOT)}); import build_data as bd
 from pathlib import Path
 d = Path(${JSON.stringify(dir)})
-p = bd.build([d/'sample_row.pkl'], [d/'Sheet_1_-_sample.csv'])
+p = bd.build([d/'sample_row.pkl', d/'sample_row_1001.pkl'])
 open(d/'b.json', 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
   execFileSync(py, ['-c', code], { stdio: 'ignore' });
   return JSON.parse(fs.readFileSync(path.join(dir, 'b.json'), 'utf8'));
 }
 const P = buildSample();
-const R = C.prepare(P.row, C.ROW_METS), A = C.prepare(P.af, C.AF_METS);
+const R = C.prepare(P.row, C.ROW_METS);
 const near = (a, b, eps = 0.051) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
 
 test('월 일평균 = 기간 합 ÷ 데이터 일수, CPA = 합 ÷ 합', () => {
   const ts = C.daily(R, { group: 't' });
   const tot = C.addSeries([...ts.values()], C.ROW_METS, R.dates.length);
   const ps = C.periods(R, 'month'), sep = ps.at(-1);
-  assert.equal(sep.key, '2026-09'); assert.equal(sep.idx.length, 29); assert.equal(sep.partial, true);
+  assert.equal(sep.key, '2026-10'); assert.equal(sep.idx.length, 4); assert.equal(sep.partial, true);
   let cost = 0, join = 0;
-  for (let i = 0; i < R.n; i++) if (R.dates[R.f.d[i]].startsWith('2026-09')) { cost += R.f.cost[i]; join += R.f.join[i]; }
-  near(C.value(C.METRIC.cost, C.sumIdx(tot, sep.idx, ['cost']), 29, 'avg'), cost / 29, 1e-6);
-  near(C.value(C.METRIC.jcpa, C.sumIdx(tot, sep.idx, ['cost', 'join']), 29, 'avg'), cost / join, 1e-6);
-  near(C.value(C.METRIC.cost, C.sumIdx(tot, sep.idx, ['cost']), 29, 'sum'), cost, 1e-6);
+  for (let i = 0; i < R.n; i++) if (R.dates[R.f.d[i]].startsWith('2026-10')) { cost += R.f.cost[i]; join += R.f.join[i]; }
+  near(C.value(C.METRIC.cost, C.sumIdx(tot, sep.idx, ['cost']), 4, 'avg'), cost / 4, 1e-6);
+  near(C.value(C.METRIC.jcpa, C.sumIdx(tot, sep.idx, ['cost', 'join']), 4, 'avg'), cost / join, 1e-6);
+  near(C.value(C.METRIC.cost, C.sumIdx(tot, sep.idx, ['cost']), 4, 'sum'), cost, 1e-6);
 });
 
 test('진행 중인 월의 전년·전월 비교는 같은 일자까지만', () => {
-  const ps = C.periods(R, 'month'), sep = ps.at(-1), aug = ps.at(-2);
-  const yoy = C.compareIdx(R, sep, 'month', 'yoy'), pop = C.compareIdx(R, sep, 'month', 'pop');
-  assert.equal(yoy.length, 29); assert.equal(R.dates[yoy.at(-1)], '2025-09-29');
-  assert.equal(pop.length, 29); assert.equal(R.dates[pop.at(-1)], '2026-08-29');
-  assert.equal(C.compareIdx(R, aug, 'month', 'pop').length, 31);
+  const ps = C.periods(R, 'month'), oct = ps.at(-1), sep = ps.at(-2);
+  const yoy = C.compareIdx(R, oct, 'month', 'yoy'), pop = C.compareIdx(R, oct, 'month', 'pop');
+  assert.equal(yoy.length, 4); assert.equal(R.dates[yoy.at(-1)], '2025-10-04');
+  assert.equal(pop.length, 4); assert.equal(R.dates[pop.at(-1)], '2026-09-04');
+  assert.equal(C.compareIdx(R, sep, 'month', 'pop').length, 31);
 });
 
 test('주차: ISO 월~일, 표시는 목요일 기준 · 전년은 364일 전', () => {
   const ws = C.periods(R, 'week'), last = ws.at(-1);
-  assert.equal(last.key, '2026-09-28'); assert.equal(last.label, '26년 10월 1주차'); assert.equal(last.idx.length, 2);
-  assert.deepEqual(C.compareIdx(R, last, 'week', 'yoy').map(i => R.dates[i]), ['2025-09-29', '2025-09-30']);
+  assert.equal(last.key, '2026-09-28'); assert.equal(last.label, '26년 10월 1주차'); assert.equal(last.idx.length, 7); assert.equal(last.partial, false);
+  assert.deepEqual(C.compareIdx(R, last, 'week', 'yoy').map(i => R.dates[i]).slice(0, 2), ['2025-09-29', '2025-09-30']);
 });
 
-test('AF 베이스라인 · 계절 기대치', () => {
-  const s = C.daily(A).get('_');
-  const valid = new Uint8Array(A.dates.length).fill(1); valid[A.dates.length - 1] = 0;
-  const r = C.baseline(A, s, {
-    base: C.rangeIdx(A, '2026-07-01', '2026-09-30'), recent: C.rangeIdx(A, '2026-10-01', '2026-10-31', valid),
-    refBase: C.rangeIdx(A, '2024-07-01', '2024-09-30'), refRecent: C.rangeIdx(A, '2024-10-01', '2024-10-04'),
+// 날짜 구간별 하루 고정값을 넣은 가짜 시리즈 (구매고객 · 첫구매 · UV)
+function fixedSeries(spec) {
+  const n = R.dates.length, o = { buy: new Float64Array(n), fp: new Float64Array(n), uv: new Float64Array(n) };
+  R.dates.forEach((d, i) => { for (const [a, b, buy, fp, uv] of spec) if (d >= a && d <= b) { o.buy[i] = buy; o.fp[i] = fp; o.uv[i] = uv; } });
+  return o;
+}
+
+test('베이스라인 · 계절 기대치 · 비중 · 전환율', () => {
+  const s = fixedSeries([
+    ['2025-07-01', '2025-09-30', 1000, 125, 50000], ['2025-10-01', '2025-10-31', 1100, 150, 50000],
+    ['2026-07-01', '2026-09-30', 1200, 100, 40000], ['2026-10-01', '2026-10-31', 1500, 114, 38000],
+  ]);
+  const r = C.baseline(R, s, {
+    base: C.rangeIdx(R, '2026-07-01', '2026-09-30'), recent: C.rangeIdx(R, '2026-10-01', '2026-10-04'),
+    refBase: C.rangeIdx(R, '2025-07-01', '2025-09-30'), refRecent: C.rangeIdx(R, '2025-10-01', '2025-10-04'),
   }).rows;
-  // 가짜 원천: 베이스 1200/100 → 최근 1500/114, 비교 연도 1000/125 → 1100/150
-  near(r.ord.base, 1200); near(r.fp.base, 100); near(r.ord.recent, 1500); near(r.fp.recent, 114);
-  near(r.ord.chg, 25); near(r.fp.chg, 14); near(r.ord.season, 10); near(r.fp.season, 20);
-  near(r.ord.exp, 1320); near(r.fp.exp, 120);
-  near(r.ord.vsExp, (1500 / 1320 - 1) * 100); near(r.fp.vsExp, -5);
+  near(r.buy.base, 1200); near(r.fp.base, 100); near(r.buy.recent, 1500); near(r.fp.recent, 114);
+  near(r.buy.chg, 25); near(r.fp.chg, 14); near(r.buy.season, 10); near(r.fp.season, 20);
+  near(r.buy.exp, 1320); near(r.fp.exp, 120); near(r.fp.vsExp, -5);
   near(r.share.base, 100 / 1200, 1e-9); near(r.share.recent, 114 / 1500, 1e-9);
+  near(r.cr.base, 100 / 40000, 1e-12); near(r.cr.recent, 114 / 38000, 1e-12); near(r.uv.chg, -5);
+  near(r.fp.expAdj, 120);   // 하루 고정값이면 요일 보정 기대치 = 단순 기대치
 });
 
 test('요일 보정: 평일·주말 평균을 비교구간 요일 구성으로 가중', () => {
-  const s = { ord: new Float64Array(A.dates.length), fp: new Float64Array(A.dates.length), fpr: new Float64Array(A.dates.length) };
-  A.dates.forEach((d, i) => { s.ord[i] = C.isOff(A.dn[i]) ? 20 : 10; s.fp[i] = 1; });
-  const base = C.rangeIdx(A, '2026-07-01', '2026-09-30'), recent = C.rangeIdx(A, '2026-10-01', '2026-10-04');
-  const w = C.weekdayAdjusted(A, s, base, recent, ['ord']);
+  const n = R.dates.length, s = { buy: new Float64Array(n), fp: new Float64Array(n), uv: new Float64Array(n) };
+  R.dates.forEach((d, i) => { s.buy[i] = C.isOff(R.dn[i]) ? 20 : 10; s.fp[i] = 1; });
+  const base = C.rangeIdx(R, '2026-07-01', '2026-09-30'), recent = C.rangeIdx(R, '2026-10-01', '2026-10-04');
+  const w = C.weekdayAdjusted(R, s, base, recent, ['buy']);
   // 10/1(목) 10/2(금) 평일, 10/3(토·개천절) 10/4(일) → (10*2 + 20*2)/4
-  assert.equal(w.on, 2); assert.equal(w.off, 2); near(w.ord, 15, 1e-9);
+  assert.equal(w.on, 2); assert.equal(w.off, 2); near(w.buy, 15, 1e-9);
 });
 
-test('시즌 브랜드 비중 · 구성 효과 분해 합 = 비중 변화', () => {
-  const base = C.rangeIdx(A, '2026-07-01', '2026-09-30'), recent = C.rangeIdx(A, '2026-10-01', '2026-10-04');
-  const t = C.tree(A, { where: { mid: new Set(['BSA']) }, dims: ['brand'], sets: [base, recent], mets: ['ord', 'fp'] });
-  const season = new Set(['우포스', '킨', '아일랜드슬리퍼']);
-  let sf = 0, all = 0;
-  for (const n of t.nodes.values()) { all += n.s[0].fp; if (season.has(n.v)) sf += n.s[0].fp; }
-  near(sf / all, 0.25, 1e-6);
+test('구성 효과 분해: 구성 + 내부 = 비중 변화 (브랜드/기획전 기준)', () => {
+  const base = C.rangeIdx(R, '2026-07-01', '2026-09-28'), recent = C.rangeIdx(R, '2026-09-29', '2026-10-04');
+  const t = C.tree(R, { where: { t: new Set(['브랜드검색광고']) }, dims: ['bp'], sets: [base, recent], mets: ['buy', 'fp'] });
   const d = t.days;
-  const items = [...t.nodes.values()].map(n => ({ name: n.v, b: { ord: n.s[0].ord / d[0], fp: n.s[0].fp / d[0] }, r: { ord: n.s[1].ord / d[1], fp: n.s[1].fp / d[1] } }));
+  const items = [...t.nodes.values()].map(n => ({ name: n.v, b: { buy: n.s[0].buy / d[0], fp: n.s[0].fp / d[0] }, r: { buy: n.s[1].buy / d[1], fp: n.s[1].fp / d[1] } }));
+  assert.deepEqual(items.map(x => x.name).sort(), ['브랜드A', '우포스', '킨']);
   const dec = C.mixDecompose(items);
   near(dec.mix + dec.within, dec.R1 - dec.R0, 1e-9);
+  near(dec.F0, items.reduce((a, x) => a + x.b.fp, 0), 1e-9);
 });
 
 test('드릴다운 트리: 하위 합 = 상위 (브랜드/기획전 · 디바이스 포함)', () => {
