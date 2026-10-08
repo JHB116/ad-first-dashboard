@@ -24,16 +24,16 @@ Streamlit 무료 서버는 메모리가 넉넉하지 않아 100MB 넘는 원천�
 
 **처음 한 번**
 1. 이 저장소를 내려받는다(GitHub → Code → Download ZIP → 압축 풀기, 또는 `git clone`).
-2. `data\raw` 폴더를 만들고(없으면 `make_backup.bat` 이 만든다) 2024년 csv와 2025-26 xlsb를 넣는다.
-3. `make_backup.bat` 더블클릭 → 필요한 패키지를 설치하고 `backup` 폴더에 `광고신규대시보드_백업_YYYYMMDD.json.gz` 를 만든 뒤 폴더를 연다.
+2. `make_backup.bat` 을 한 번 더블클릭하면 같은 폴더에 `raw` 폴더가 생기고 열린다. 거기에 2024년 csv와 2025-26 xlsb를 넣는다.
+3. `make_backup.bat` 을 다시 더블클릭 → 필요한 패키지를 설치하고 `backup` 폴더에 `광고신규대시보드_백업_YYYYMMDD.json.gz` 를 만든 뒤 폴더를 연다.
 4. 그 파일을 대시보드 화면에 끌어다 놓는다(또는 **백업 파일 열기**).
 
 **매일**
-1. `data\raw` 의 2025-26 xlsb를 새 파일로 **덮어쓴다**(예전 버전 파일은 지운다).
+1. `raw` 폴더의 2025-26 xlsb를 새 파일로 **덮어쓴다**(예전 버전 파일은 지운다).
 2. `make_backup.bat` 더블클릭 → 새 백업을 대시보드에 끌어다 놓는다.
 
 - 2024년 csv는 처음 한 번만 읽고 결과를 `data\cache` 에 저장해 두므로, 매일은 2025-26 xlsb만 새로 읽는다.
-- 직접 실행: `python build_data.py`(data/raw 전부) · `python build_data.py --row a.xlsb b.csv`
+- 직접 실행: `python build_data.py`(raw 폴더 전부) · `python build_data.py --row a.xlsb b.csv`
 
 ### B. Streamlit 화면에서 원천 올리기 (작은 파일)
 
@@ -71,7 +71,7 @@ Streamlit Cloud → New app → 이 저장소 · Branch `main` · **Main file pa
 | `dashboard.html` | 화면 · 상태 · 차트 · 표 |
 | `calc.js` | 공식 산식(기간 · 일평균 · CPA · 비교 기간 · 드릴다운 트리 · 베이스라인 · 구성 효과 분해). 화면과 테스트가 함께 쓴다 |
 | `build_data.py` | 원천 → 백업, 광고유형 분류, 이어 붙이기 |
-| `make_backup.bat` | PC(윈도우)에서 더블클릭 — `data\\raw` 원천으로 백업 만들기 |
+| `make_backup.bat` | PC(윈도우)에서 더블클릭 — `raw` 폴더 원천으로 백업 만들기 |
 | `app.py` | Streamlit: 원천 업로드 → 백업, `dashboard.html` + `calc.js` 표시 |
 | `tests/` | `make_sample.py`(가짜 원천, 임의값) · `test_build.py` · `test_calc.mjs` · `test_real_numbers.py`(실데이터 + 로컬 기대값이 있을 때만) |
 | `docs/METRICS.md` | 지표 · 분류 · 기간 정의, 분석 원칙 |
@@ -85,4 +85,4 @@ node --test tests/*.mjs            # 화면 산식
 python -c "from streamlit.testing.v1 import AppTest; at=AppTest.from_file('app.py'); at.run(); print(at.exception or 'OK')"
 ```
 
-실제 수치 대조는 `data/raw/`에 원천을 넣고 `tests/local/expected.json`(형식은 `tests/test_real_numbers.py` 주석)을 만들어 `pytest`를 돌린다. **공개 저장소이므로 원천 · 백업 · 실제 수치는 커밋하지 않는다**(`.gitignore`: `data/` · `backup/` · xlsb/xlsx/csv · `.json.gz` · `tests/local/`).
+실제 수치 대조는 `raw/` 폴더에 원천을 넣고 `tests/local/expected.json`(형식은 `tests/test_real_numbers.py` 주석)을 만들어 `pytest`를 돌린다. **공개 저장소이므로 원천 · 백업 · 실제 수치는 커밋하지 않는다**(`.gitignore`: `raw/` · `data/` · `backup/` · xlsb/xlsx/csv · `.json.gz` · `tests/local/`).

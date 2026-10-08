@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""실데이터 검증 — data/raw/ 에 로우 xlsb 가 있고 tests/local/expected.json 이 있을 때만 실행 (없으면 skip)
+"""실데이터 검증 — raw/ 폴더에 로우 파일이 있고 tests/local/expected.json 이 있을 때만 실행 (없으면 skip)
 
 공개 저장소라 기대값(실제 실적)은 커밋하지 않는다. tests/local/ 은 .gitignore 대상.
 expected.json 예시 (값은 일보고서 시트 · 분석 결과에서 옮겨 적는다):
@@ -22,8 +22,8 @@ import build_data as bd
 
 EXP_PATH = Path(__file__).parent / 'local' / 'expected.json'
 EXP = json.loads(EXP_PATH.read_text(encoding='utf-8')) if EXP_PATH.exists() else {}
-ROWS = bd.by_mtime(bd.RAW_DIR.glob('*.xlsb'))
-need_row = pytest.mark.skipif(not (ROWS and EXP), reason='data/raw/*.xlsb 또는 tests/local/expected.json 없음')
+ROWS = bd.by_mtime(p for d in bd.RAW_DIRS for p in d.glob('*') if p.suffix.lower() in bd.ROW_EXT)
+need_row = pytest.mark.skipif(not (ROWS and EXP), reason='raw/ 원천 또는 tests/local/expected.json 없음')
 
 
 @pytest.fixture(scope='module')

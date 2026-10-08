@@ -2,7 +2,7 @@
 """광고 신규 실적 대시보드 — 원천(로우 파일 xlsb · csv · xlsx) → 백업 파일(.json.gz)
 
 사용법 (PC — make_backup.bat 을 더블클릭해도 같다)
-    python build_data.py                                  # data/raw/ 의 로우 파일 전부 → 백업
+    python build_data.py                                  # raw/ 폴더의 로우 파일 전부 → 백업
     python build_data.py --row a.xlsb b.csv               # 파일 직접 지정 (여러 개 가능)
     python build_data.py --base 기존백업.json.gz --row 1001.xlsb   # 기존 백업에 새 날짜 추가 · 같은 날짜 교체
     python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 차원 빼고 가볍게
@@ -29,7 +29,8 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
-RAW_DIR = ROOT / 'data' / 'raw'
+RAW_DIR = ROOT / 'raw'                     # 원천을 넣는 폴더 (예전 위치 data/raw 도 읽는다)
+RAW_DIRS = [RAW_DIR, ROOT / 'data' / 'raw']
 CACHE_DIR = ROOT / 'data' / 'cache'
 OUT_DIR = ROOT / 'backup'
 
@@ -561,13 +562,13 @@ def by_mtime(paths):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='광고 신규 실적 대시보드 백업 만들기')
-    ap.add_argument('--row', type=Path, nargs='*', help='로우 파일들 (기본: data/raw 의 xlsb · csv · xlsx 전부, 수정시각 순)')
+    ap.add_argument('--row', type=Path, nargs='*', help='로우 파일들 (기본: raw 폴더의 xlsb · csv · xlsx 전부, 수정시각 순)')
     ap.add_argument('--base', type=Path, help='이어 붙일 기존 백업(.json.gz)')
     ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외')
     ap.add_argument('--out-stamp', help='파일명 날짜 (기본: 로우 최신일)')
     a = ap.parse_args(argv)
 
-    rows = a.row if a.row is not None else by_mtime(p for p in RAW_DIR.glob('*')
+    rows = a.row if a.row is not None else by_mtime(p for d in RAW_DIRS for p in d.glob('*')
                                                     if p.suffix.lower() in ROW_EXT and not p.name.startswith(('~$', '.')))
     base = read_backup(a.base) if a.base else None
     if not rows and not base:
