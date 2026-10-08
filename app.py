@@ -8,6 +8,7 @@ dashboard.html 을 화면 가득 띄운다(첫구매 실적 대시보드와 같�
 """
 import base64
 import contextlib
+import gc
 import hashlib
 import io
 import tempfile
@@ -50,29 +51,38 @@ def run_build(row_files):
     log = io.StringIO()
     with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(log):
         def save(f, k):
-            p = Path(tmp) / f'{k:02d}' / Path(f.name).name   # 올린 순서 유지 (같은 날짜는 뒤 파일이 이김)
-            p.parent.mkdir()
-            p.write_bytes(f.getbuffer())
-            return p
-        rows = [save(f, k) for k, f in enumerate(row_files)]
+            d = Path(tmp) / f'{k:02d}'                       # 올린 순서 유지 (같은 날짜는 뒤 파일이 이김)
+            d.mkdir()
+            return bd.unpack_upload(Path(f.name).name, f, d)
+        rows = [p for k, f in enumerate(row_files) for p in save(f, k)]
         payload = bd.build(rows, use_cache=False)
     return bd.backup_bytes(payload), payload['source'], log.getvalue()
 
 
-with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 새 날짜만)', expanded=False):
+with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 새 날짜만)', expanded=st.session_state.pop('just_built', False)):
     st.caption('로우 파일(xlsb · csv · xlsx, 첫 행 헤더)을 올리면 이 브라우저에 저장된 데이터에 합칩니다. '
+               '큰 csv(수십 MB 이상)는 zip 으로 압축해 올리면 서버 메모리를 훨씬 덜 씁니다(압축 안의 파일을 그대로 읽음). '
                '올린 파일에 있는 날짜는 새 값으로 바뀌고, 나머지 날짜(예: 2024년)는 그대로 남습니다. '
                '데이터는 서버가 아니라 이 브라우저에만 저장됩니다 — 다른 PC에서 보려면 대시보드의 \'백업 내려받기\'로 옮기세요.')
-    row_files = st.file_uploader('로우 파일 (여러 개 가능 · 같은 날짜는 뒤 파일이 이김)', type=['xlsb', 'csv', 'xlsx'], accept_multiple_files=True)
+    up_key = f"rows_{st.session_state.get('up_n', 0)}"     # 처리 후 키를 바꿔 올린 파일을 서버 메모리에서 비운다
+    row_files = st.file_uploader('로우 파일 (여러 개 가능 · 같은 날짜는 뒤 파일이 이김)', type=['xlsb', 'csv', 'xlsx', 'zip', 'gz'], accept_multiple_files=True, key=up_key)
     if st.button('올리기', type='primary', disabled=not row_files):
+        ok = False
         with st.spinner('읽는 중… 큰 파일은 몇 분 걸릴 수 있습니다'):
             try:
                 data, source, log = run_build(row_files)
                 st.session_state['built'] = {'data': data, 'source': source, 'log': log,
                                              'id': hashlib.sha1(data).hexdigest()[:12]}
+                ok = True
             except Exception as e:  # 원천 형식 오류를 화면에 보여 준다
                 st.session_state.pop('built', None)
                 st.error(f'읽지 못했습니다: {e}')
+        if ok:
+            st.session_state['up_n'] = st.session_state.get('up_n', 0) + 1
+            st.session_state['just_built'] = True
+            del row_files
+            gc.collect()
+            st.rerun()
     built = st.session_state.get('built')
     if built:
         r = built['source']['row']

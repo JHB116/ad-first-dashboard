@@ -20,7 +20,7 @@ function buildSample() {
 from pathlib import Path
 d = Path(${JSON.stringify(dir)})
 p = bd.build([d/'sample_row.pkl', d/'sample_row_1001.pkl'])
-open(d/'b.json', 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
+open(d/'b.json', 'w', encoding='utf-8').write(bd.to_json(p))`;
   execFileSync(py, ['-c', code], { stdio: 'ignore' });
   return JSON.parse(fs.readFileSync(path.join(dir, 'b.json'), 'utf8'));
 }
@@ -117,7 +117,7 @@ test('데이터 없음: 2024년 원천에 없는 지표는 0 이 아니라 값 �
 from pathlib import Path
 d = Path(${JSON.stringify(dir)})
 p = bd.build([d/'sample_row_2024.pkl', d/'sample_row.pkl'])
-open(d/'b.json', 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
+open(d/'b.json', 'w', encoding='utf-8').write(bd.to_json(p))`;
   execFileSync(py, ['-c', code], { stdio: 'ignore' });
   const R2 = C.prepare(JSON.parse(fs.readFileSync(path.join(dir, 'b.json'), 'utf8')).row, C.ROW_METS);
   const tot = C.daily(R2).get('_');
@@ -149,7 +149,7 @@ function buildFiles(files) {
 from pathlib import Path
 d = Path(${JSON.stringify(SAMPLE_DIR)})
 p = bd.build([d/f for f in ${JSON.stringify(files)}])
-open(${JSON.stringify(out)}, 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
+open(${JSON.stringify(out)}, 'w', encoding='utf-8').write(bd.to_json(p))`;
   execFileSync(process.env.PYTHON || 'python3', ['-c', code], { stdio: 'ignore' });
   return JSON.parse(fs.readFileSync(out, 'utf8'));
 }

@@ -71,7 +71,7 @@ def test_lite_drops_dims(sample):
 
 def test_append_to_base_replaces_overlap(sample, payload):
     # 기존 백업(~9/29) + 추가 파일(9/29~10/4): 9/29 는 새 값으로 교체, 나머지 날짜는 유지
-    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(json.dumps(payload)))
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(bd.to_json(payload)))
     assert p2['source']['row']['to'] == '2026-10-04' and p2['source']['row']['days'] == 642
     old, new = frame(payload['row']), frame(p2['row'])
     add = bd.prep_row(bd.load_row_raw(sample / 'sample_row_1001.pkl'))
@@ -94,7 +94,7 @@ def test_multiple_row_files_later_wins(sample):
 
 def test_old_backup_without_new_metrics(sample, payload):
     # 구매고객(buy) 등이 없던 예전 백업에 이어 붙이면, 예전 날짜는 그 지표가 '데이터 없음'
-    old = json.loads(json.dumps(payload))
+    old = json.loads(bd.to_json(payload))
     for m in ('buy', 'rev', 'wb'):
         del old['row']['f'][m]
     p2 = bd.build([sample / 'sample_row_1001.pkl'], base=old)
@@ -118,7 +118,7 @@ def test_2024_file_missing_columns_marked_na(sample):
     y24 = f[f['date'] < '2025-01-01']
     assert y24['fp'].sum() > 0 and y24['buy'].sum() > 0
     # 이어 붙여도 '데이터 없음' 날짜가 유지된다
-    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(json.dumps(p)))
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(bd.to_json(p)))
     assert p2['row']['na']['nb'] == na['nb']
 
 
@@ -183,3 +183,27 @@ def test_csv_partly_broken_bytes_still_reads(tmp_path):
     p.write_bytes(hdr.encode('utf-8') + body[:3000] + b'\xff\xfe' + body[3000:])
     df = bd.read_csv_any(p)
     assert len(df) == 300 and df.columns[0] == '기간_일자'
+
+
+def test_unpack_upload_zip_gz(tmp_path):
+    import gzip as gz
+    import io
+    import zipfile
+    df = ms.make_row('2024-01-01', '2024-01-05')
+    df['기간_일자'] = pd.to_datetime(df['기간_일자'], unit='D', origin='1899-12-30').dt.strftime('%Y-%m-%d')
+    csv = df.to_csv(index=False).encode('utf-8-sig')
+    zbuf = io.BytesIO()
+    with zipfile.ZipFile(zbuf, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('로우_2024.csv', csv)
+        z.writestr('__MACOSX/._x', b'junk')
+        z.writestr('설명.txt', b'x')
+    zbuf.seek(0)
+    (tmp_path / 'z').mkdir()
+    ps = bd.unpack_upload('rows.zip', zbuf, tmp_path / 'z')
+    assert [p.name for p in ps] == ['로우_2024.csv']
+    (tmp_path / 'g').mkdir()
+    pg = bd.unpack_upload('로우_2024.csv.gz', io.BytesIO(gz.compress(csv)), tmp_path / 'g')
+    assert [p.name for p in pg] == ['로우_2024.csv']
+    a, b = bd.build(ps), bd.build(pg)
+    assert a['row']['dates'] == b['row']['dates'] == [f'2024-01-0{i}' for i in range(1, 6)]
+    assert sum(a['row']['f']['cost']) == sum(b['row']['f']['cost'])

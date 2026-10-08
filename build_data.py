@@ -84,8 +84,8 @@ def to_num(s: pd.Series) -> pd.Series:
 
 
 def clean_dim(s: pd.Series) -> pd.Series:
-    s = s.astype(object).where(s.notna(), '-')
-    s = s.map(lambda v: (str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)).strip())
+    s = s.astype(object).where(s.notna(), '-').astype(str).str.strip()
+    s = s.str.replace(r'^(-?\d+)\.0$', r'\1', regex=True)          # xlsb 숫자 셀 114293.0 → 114293
     return s.replace({'': '-', 'nan': '-', 'None': '-'})
 
 
@@ -101,101 +101,217 @@ def excel_serial_to_date(s: pd.Series) -> pd.Series:
     return pd.to_datetime(t, format='%Y-%m-%d', errors='coerce').fillna(pd.to_datetime(t, errors='coerce')).dt.normalize()
 
 
-def read_csv_any(path: Path) -> pd.DataFrame:
-    """엑셀에서 저장한 csv — 인코딩(UTF-8 · CP949 · UTF-16)과 구분자(쉼표 · 탭)를 알아서 맞춘다"""
-    data = path.read_bytes()
-    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
-        encs = ['utf-16']
+CHUNK = 20_000                                     # 큰 원천은 이 행 수씩 나눠 읽고 바로 합산 (메모리 절약)
+WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS]
+DIM_KEYS = list(ROW_DIMS.values())
+
+
+def sniff_csv(path: Path):
+    """csv 인코딩(UTF-8 · CP949 · UTF-16) · 구분자(쉼표 · 탭) · 헤더 — 파일을 한꺼번에 메모리에 올리지 않고 판별"""
+    import codecs
+    import csv
+
+    with open(path, 'rb') as f:
+        bom = f.read(2)
+    errors = 'strict'
+    if bom in (b'\xff\xfe', b'\xfe\xff'):
+        enc = 'utf-16'
     else:
-        # 앞부분을 바이트 수로 자르면 한글 글자 중간이 잘려 판별이 틀어진다 → 전체로 엄격 판별
-        encs = []
-        for enc in ('utf-8-sig', 'cp949'):
+        enc = None
+        for cand in ('utf-8-sig', 'cp949'):
+            dec = codecs.getincrementaldecoder(cand)('strict')
             try:
-                data.decode(enc)
-                encs = [enc]
+                with open(path, 'rb') as f:
+                    while block := f.read(1 << 22):     # 4MB 씩 — 글자 중간에서 잘려도 증분 디코더가 이어 붙인다
+                        dec.decode(block)
+                dec.decode(b'', final=True)
+                enc = cand
                 break
             except UnicodeDecodeError:
-                pass
-    bad = None
-    if not encs:
-        # 둘 다 엄격하게는 안 맞으면(깨진 글자 일부) 덜 깨지는 쪽으로 읽고 깨진 글자만 대체
-        cnt = {enc: data.decode(enc, errors='replace').count('\ufffd') for enc in ('utf-8-sig', 'cp949')}
-        enc = min(cnt, key=cnt.get)
-        encs, bad = [enc], cnt[enc]
-        log(f'  ! {path.name}: 인코딩이 일부 깨져 있어 {enc} 로 읽고 깨진 글자 {bad}개를 대체했습니다')
-    enc = encs[0]
-    first = data[:data.find(b'\n') if b'\n' in data else len(data)].decode(enc, errors='replace')
+                continue
+        if enc is None:
+            # 둘 다 엄격하게는 안 맞으면(깨진 글자 일부) 덜 깨지는 쪽으로 읽고 깨진 글자만 대체
+            cnt = {}
+            for cand in ('utf-8-sig', 'cp949'):
+                dec, n = codecs.getincrementaldecoder(cand)('replace'), 0
+                with open(path, 'rb') as f:
+                    while block := f.read(1 << 22):
+                        n += dec.decode(block).count('�')
+                cnt[cand] = n + dec.decode(b'', final=True).count('�')
+            enc = min(cnt, key=cnt.get)
+            errors = 'replace'
+            log(f'  ! {path.name}: 인코딩이 일부 깨져 있어 {enc} 로 읽고 깨진 글자 {cnt[enc]}개를 대체했습니다')
+    with open(path, 'r', encoding=enc, errors='replace', newline='') as f:
+        first = f.readline()
     sep = '\t' if first.count('\t') > first.count(',') else ','
-    return pd.read_csv(io.BytesIO(data), encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''],
-                       encoding_errors='replace' if bad else 'strict')
+    header = [c.strip() for c in next(csv.reader([first], delimiter=sep))]
+    return enc, sep, header, errors
 
 
-def name_of(src) -> str:
-    return getattr(src, 'name', None) or str(src)
+def read_csv_any(path: Path) -> pd.DataFrame:
+    """csv 전체를 한 번에 (작은 파일 · 테스트용)"""
+    enc, sep, _, errors = sniff_csv(Path(path))
+    return pd.read_csv(path, encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''], encoding_errors=errors)
 
 
-# ── 로우 읽기 ──────────────────────────────────────────────────────────
-def read_xlsb_sheet(src, sheet: str, want: list[str]) -> pd.DataFrame:
-    """pyxlsb 로 시트를 직접 순회 — 필요한 컬럼만 담는다 (read_excel 보다 훨씬 빠르다)"""
-    from pyxlsb import open_workbook
-
-    rows, idx, header = [], None, None
-    with open_workbook(str(src)) as wb:
-        if sheet not in wb.sheets:
-            raise ValueError(f'[로우] {name_of(src)} 에 "{sheet}" 시트가 없습니다. 시트: {wb.sheets}')
-        with wb.get_sheet(sheet) as sh:
-            for n, r in enumerate(sh.rows()):
-                vals = [c.v for c in r]
-                if header is None:
-                    header = [str(v).strip() if v is not None else '' for v in vals]
-                    idx = [header.index(c) if c in header else None for c in want]
-                    missing = [c for c, i in zip(want, idx) if i is None]
-                    if ROW_DATE in missing:
-                        raise ValueError(f'[로우] {name_of(src)}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
-                    if missing:
-                        log(f'  ! {name_of(src)}: 없는 컬럼(0/빈값으로 채움) {missing}')
-                    continue
-                rows.append(tuple(vals[i] if i is not None and i < len(vals) else None for i in idx))
-                if n % 200000 == 0:
-                    log(f'  … {n:,}행')
-    return pd.DataFrame(rows, columns=want)
-
-
-def load_row_raw(path: Path, use_cache: bool = True) -> pd.DataFrame:
-    want = [ROW_DATE, *ROW_DIMS, *ROW_METRICS]
-    path = Path(path)
-    ext = path.suffix.lower()
-    if ext == '.xlsb':
-        cache = CACHE_DIR / f'{path.stem}.pkl'
-        if use_cache and cache.exists() and cache.stat().st_mtime >= path.stat().st_mtime:
-            df = pd.read_pickle(cache)
-            if list(df.columns) == want:
-                log(f'[로우] 캐시 사용: {cache.name}')
-                return df
-        log(f'[로우] {path.name} 읽는 중 (큰 파일은 2~3분)…')
-        df = read_xlsb_sheet(path, ROW_SHEET, want)
-        if use_cache:
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            df.to_pickle(cache)
-        return df
-    # csv / xlsx / (테스트용) pkl
-    if ext == '.pkl':
-        df = pd.read_pickle(path)
-    elif ext in ('.xlsx', '.xlsm'):
-        xl = pd.ExcelFile(path)
-        df = xl.parse(ROW_SHEET if ROW_SHEET in xl.sheet_names else xl.sheet_names[0], dtype=str)
-    else:
-        log(f'[로우] {path.name} 읽는 중…')
-        df = read_csv_any(path)
+def _norm(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    """원천 한 덩어리 → WANT 컬럼(없으면 빈값)"""
     df.columns = [str(c).strip() for c in df.columns]
     if ROW_DATE not in df.columns and '구분_기간' in df.columns:    # 기간_일자가 없으면 구분_기간(YYYYMMDD)
         df[ROW_DATE] = df['구분_기간']
     if ROW_DATE not in df.columns:
-        raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
-    for c in want:
+        raise ValueError(f'[로우] {name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+    for c in WANT:
         if c not in df.columns:
             df[c] = None
-    return df[want]
+    return df[WANT]
+
+
+def iter_xlsb(path: Path):
+    """pyxlsb 로 시트를 직접 순회 — 필요한 컬럼만, CHUNK 행씩 내보낸다"""
+    from pyxlsb import open_workbook
+
+    rows, idx = [], None
+    with open_workbook(str(path)) as wb:
+        if ROW_SHEET not in wb.sheets:
+            raise ValueError(f'[로우] {path.name} 에 "{ROW_SHEET}" 시트가 없습니다. 시트: {wb.sheets}')
+        with wb.get_sheet(ROW_SHEET) as sh:
+            for n, r in enumerate(sh.rows()):
+                vals = [c.v for c in r]
+                if idx is None:
+                    header = [str(v).strip() if v is not None else '' for v in vals]
+                    if ROW_DATE not in header and '구분_기간' in header:
+                        header[header.index('구분_기간')] = ROW_DATE
+                    if ROW_DATE not in header:
+                        raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+                    idx = [header.index(c) if c in header else None for c in WANT]
+                    continue
+                rows.append(tuple(vals[i] if i is not None and i < len(vals) else None for i in idx))
+                if len(rows) >= CHUNK:
+                    log(f'  … {n:,}행')
+                    yield pd.DataFrame(rows, columns=WANT)
+                    rows = []
+    if rows or idx is None:
+        yield pd.DataFrame(rows, columns=WANT)
+
+
+def iter_raw(path: Path):
+    """원천 파일 → WANT 컬럼 DataFrame 덩어리들 (xlsb · csv 는 CHUNK 행씩)"""
+    path = Path(path)
+    ext = path.suffix.lower()
+    if ext == '.xlsb':
+        yield from iter_xlsb(path)
+    elif ext == '.pkl':                                   # 테스트용
+        yield _norm(pd.read_pickle(path), path.name)
+    elif ext in ('.xlsx', '.xlsm'):
+        xl = pd.ExcelFile(path)
+        yield _norm(xl.parse(ROW_SHEET if ROW_SHEET in xl.sheet_names else xl.sheet_names[0], dtype=str), path.name)
+    else:
+        enc, sep, header, errors = sniff_csv(path)
+        use = [c for c in header if c in WANT or c == '구분_기간']   # 필요한 컬럼만 읽는다
+        if ROW_DATE not in use and '구분_기간' not in use:
+            raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+        reader = pd.read_csv(path, encoding=enc, sep=sep, usecols=use, dtype=str, keep_default_na=False, na_values=[''],
+                             chunksize=CHUNK, encoding_errors=errors)
+        for k, chunk in enumerate(reader):
+            if k:
+                log(f'  … {k * CHUNK:,}행')
+            yield _norm(chunk, path.name)
+
+
+def concat_cat(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """범주형 차원을 유지한 채 이어 붙인다 (범주가 달라도 object 로 풀리지 않게 범주를 합친다)"""
+    frames = [f for f in frames if len(f)] or frames[:1]
+    if len(frames) == 1:
+        return frames[0].reset_index(drop=True)
+    cat_cols = [c for c in frames[0].columns if isinstance(frames[0][c].dtype, pd.CategoricalDtype)]
+    for c in cat_cols:
+        cats = pd.api.types.union_categoricals([f[c] for f in frames]).categories
+        for f in frames:
+            f[c] = f[c].cat.set_categories(cats)
+    return pd.concat(frames, ignore_index=True)
+
+
+ROW_EXT = ('.xlsb', '.csv', '.xlsx', '.xlsm')
+
+
+def unpack_upload(name: str, src, out_dir: Path) -> list[Path]:
+    """올린 파일 → 디스크의 원천 파일들. zip 은 안의 xlsb · csv · xlsx 를, gz 는 풀어서. 조금씩 복사해 메모리를 아낀다"""
+    import shutil
+    import zipfile
+
+    out_dir = Path(out_dir)
+    lower = name.lower()
+    if lower.endswith('.zip'):
+        paths = []
+        with zipfile.ZipFile(src) as z:
+            for i, info in enumerate(m for m in z.infolist() if not m.is_dir()):
+                fname = info.filename
+                if not info.flag_bits & 0x800:          # 윈도우 압축(CP949 파일명) 깨짐 복구
+                    try:
+                        fname = fname.encode('cp437').decode('cp949')
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        pass
+                base = Path(fname).name
+                if base.startswith('.') or Path(base).suffix.lower() not in ROW_EXT:
+                    continue
+                p = out_dir / f'{i:03d}_{base}' if (out_dir / base).exists() else out_dir / base
+                with z.open(info) as r, open(p, 'wb') as w:
+                    shutil.copyfileobj(r, w, 1 << 20)
+                paths.append(p)
+        if not paths:
+            raise ValueError(f'{name}: 압축 안에 xlsb · csv · xlsx 파일이 없습니다')
+        return sorted(paths)
+    if lower.endswith('.gz'):
+        p = out_dir / name[:-3]
+        with gzip.open(src) as r, open(p, 'wb') as w:
+            shutil.copyfileobj(r, w, 1 << 20)
+        return [p]
+    p = out_dir / name
+    with open(p, 'wb') as w:
+        if hasattr(src, 'getbuffer'):
+            w.write(src.getbuffer())
+        else:
+            shutil.copyfileobj(src, w, 1 << 20)
+    return [p]
+
+
+def load_row_raw(path: Path, use_cache: bool = True) -> pd.DataFrame:
+    """원천 전체를 한 번에 (작은 파일 · 테스트용). 큰 파일은 load_prepped 를 쓴다"""
+    return pd.concat(list(iter_raw(path)), ignore_index=True)
+
+
+def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list[str]]:
+    """원천 → 정제 · (일자 × 차원) 합산 DataFrame, 원천에 없는 지표 키.
+    덩어리마다 바로 합산해 메모리를 원천 크기의 일부만 쓴다. xlsb · csv 는 data/cache/ 에 결과를 캐시"""
+    path = Path(path)
+    cache = CACHE_DIR / f'{path.name}.v2.pkl'
+    cacheable = use_cache and path.suffix.lower() in ('.xlsb', '.csv')
+    if cacheable and cache.exists() and cache.stat().st_mtime >= path.stat().st_mtime:
+        log(f'[로우] 캐시 사용: {cache.name}')
+        c = pd.read_pickle(cache)
+        return c['df'], c['missing']
+    log(f'[로우] {path.name} 읽는 중 (큰 파일은 몇 분)…')
+    mets = list(ROW_METRICS.values())
+    seen = {key: False for key in mets}
+    parts = []
+    for raw in iter_raw(path):
+        for src, key in ROW_METRICS.items():
+            seen[key] = seen[key] or bool(raw[src].notna().any())
+        p = prep_row(raw)
+        del raw
+        for k in DIM_KEYS:                      # 문자열 차원은 범주형(코드 + 값 목록)으로 — 메모리를 크게 줄인다
+            p[k] = p[k].astype('category')
+        parts.append(p.groupby(['date', *DIM_KEYS], sort=False, observed=True)[mets].sum().reset_index())
+        del p
+    df = concat_cat(parts)
+    if len(parts) > 1:
+        df = df.groupby(['date', *DIM_KEYS], sort=False, observed=True)[mets].sum().reset_index()
+    missing = [k for k, v in seen.items() if not v]
+    if cacheable:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        pd.to_pickle({'df': df, 'missing': missing}, cache)
+    return df, missing
 
 
 def classify(df: pd.DataFrame) -> pd.Series:
@@ -225,11 +341,6 @@ def prep_row(raw: pd.DataFrame) -> pd.DataFrame:
     return df[df['date'].notna()].reset_index(drop=True)
 
 
-def missing_metrics(raw: pd.DataFrame) -> list[str]:
-    """원천에 컬럼이 없는(값이 전부 빈칸인) 지표 키 — 0 이 아니라 '데이터 없음'으로 기록한다"""
-    return [key for src, key in ROW_METRICS.items() if src not in raw.columns or raw[src].isna().all()]
-
-
 def latest_wins(frames: list[pd.DataFrame]) -> pd.DataFrame:
     """같은 날짜가 여러 프레임에 있으면 뒤 프레임 것만 남긴다"""
     seen: set = set()
@@ -240,44 +351,86 @@ def latest_wins(frames: list[pd.DataFrame]) -> pd.DataFrame:
         if len(part):
             keep.append(part)
         seen |= dates
-    return pd.concat(keep[::-1], ignore_index=True) if keep else frames[0].iloc[0:0]
+    return concat_cat(keep[::-1]) if keep else frames[0].iloc[0:0]
 
 
 def agg_row(df: pd.DataFrame, dims: list[str]) -> tuple[pd.DataFrame, dict]:
     """분류 → 미분류 제외 → (일자 × 차원) 합계"""
-    df = df.copy()
-    df['t'] = classify(df)
-    un = df[df['t'].isna()]
+    t = classify(df)
+    ok = t.notna().to_numpy()
+    un = df.loc[~ok, ['adtype', 'cost', 'join']]
     unc = {'rows': int(len(un)), 'cost': float(un['cost'].sum()), 'join': float(un['join'].sum()),
-           'adtypes': sorted(un['adtype'].unique().tolist())[:20]}
-    df = df[df['t'].notna()]
+           'adtypes': sorted(map(str, un['adtype'].unique().tolist()))[:20]}
+    del un
     mets = list(ROW_METRICS.values())
-    g = df.groupby(['date', 't', *dims], sort=False, observed=True)[mets].sum().reset_index()
+    sub = df.loc[ok, ['date', *dims, *mets]]                 # 전체 복사 대신 필요한 열만
+    sub.insert(1, 't', pd.Categorical(t[ok]))
+    del t
+    g = sub.groupby(['date', 't', *dims], sort=False, observed=True)[mets].sum().reset_index()
+    del sub
     g = g[(g[mets].abs() > 1e-9).any(axis=1)]
     return g, unc
 
 
 # ── 인코딩 · 디코딩 ────────────────────────────────────────────────────
 def encode(g: pd.DataFrame, dates, dims, mets, fixed: dict | None = None) -> dict:
-    """열 단위 + 사전 인덱스로 압축: dims[k] = 값 목록, f[k] = 인덱스 배열"""
+    """열 단위 + 사전 인덱스로 압축: dims[k] = 값 목록, f[k] = 인덱스 배열 (numpy — to_json 이 그대로 쓴다)"""
     fixed = fixed or {}
     dates = sorted(pd.Timestamp(d) for d in dates)
-    date_ix = {d: i for i, d in enumerate(dates)}
-    out = {'dates': [d.strftime('%Y-%m-%d') for d in dates], 'dims': {}, 'f': {'d': g['date'].map(date_ix).astype(int).tolist()}}
+    dcodes = pd.Categorical(g['date'], categories=dates).codes
+    out = {'dates': [d.strftime('%Y-%m-%d') for d in dates], 'dims': {}, 'f': {'d': dcodes.astype(np.int32)}}
+    weight = np.abs(g[mets[0]].to_numpy(dtype=float))
     for k in dims:
+        c = g[k] if isinstance(g[k].dtype, pd.CategoricalDtype) else g[k].astype('category')
+        codes = c.cat.codes.to_numpy()
+        cats = [str(v) for v in c.cat.categories]
+        present = np.bincount(codes, minlength=len(cats)) > 0
         if k in fixed:
-            vals = [v for v in fixed[k] if v in set(g[k])]
+            pos = {v: i for i, v in enumerate(cats)}
+            order = [pos[v] for v in fixed[k] if v in pos and present[pos[v]]]
         else:
-            vals = g.groupby(k)[mets[0]].apply(lambda s: s.abs().sum()).sort_values(ascending=False).index.tolist()
-        ix = {v: i for i, v in enumerate(vals)}
-        out['dims'][k] = vals
-        out['f'][k] = g[k].map(ix).astype(int).tolist()
+            sums = np.bincount(codes, weights=weight, minlength=len(cats))
+            order = [i for i in np.argsort(-sums, kind='stable') if present[i]]
+        newix = np.full(len(cats), -1, dtype=np.int32)
+        newix[order] = np.arange(len(order), dtype=np.int32)
+        out['dims'][k] = [cats[i] for i in order]
+        out['f'][k] = newix[codes]
     for m in mets:
         v = g[m].to_numpy(dtype=float)
-        v = np.round(v) if m in MONEY else np.round(v, 3)
-        out['f'][m] = [int(x) if float(x).is_integer() else float(x) for x in v]
+        out['f'][m] = np.round(v) if m in MONEY else np.round(v, 3)
     out['n'] = int(len(g))
     return out
+
+
+def _json_default(o):
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    raise TypeError(type(o))
+
+
+def _arr_json(a: np.ndarray) -> str:
+    """숫자 배열 → JSON 배열 문자열 (정수값은 정수로). 한 컬럼씩만 문자열로 만들어 메모리를 아낀다"""
+    a = np.asarray(a)
+    if a.dtype.kind in 'iu' or (a.dtype.kind == 'f' and np.all(np.isfinite(a)) and np.array_equal(a, np.round(a))):
+        return '[' + ','.join(map(str, a.astype(np.int64).tolist())) + ']'
+    return '[' + ','.join(str(int(x)) if float(x).is_integer() else repr(float(x)) for x in a.tolist()) + ']'
+
+
+def to_json(payload: dict) -> str:
+    """백업 payload → JSON 문자열 (numpy 배열 포함)"""
+    def enc(o):
+        if isinstance(o, np.ndarray):
+            return _arr_json(o)
+        if isinstance(o, dict):
+            return '{' + ','.join(json.dumps(str(k), ensure_ascii=False) + ':' + enc(v) for k, v in o.items()) + '}'
+        if isinstance(o, (list, tuple)):
+            return '[' + ','.join(enc(v) for v in o) + ']'
+        return json.dumps(o, ensure_ascii=False, default=_json_default)
+    return enc(payload)
 
 
 def decode(sec: dict) -> tuple[pd.DataFrame, list]:
@@ -306,9 +459,9 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
     dims = [k for k in ROW_DIMS.values() if k != 'adtype' and not (lite and k in LITE_DROP)]
     frames, files, miss = [], [], []
     for p in row_paths:
-        raw = load_row_raw(p, use_cache=use_cache)
-        frames.append(prep_row(raw))
-        miss.append(missing_metrics(raw))
+        df, ms = load_prepped(p, use_cache=use_cache)
+        frames.append(df)
+        miss.append(ms)
         files.append(Path(p).name)
         if miss[-1]:
             log(f'  ! {Path(p).name}: 없는 지표 → 그 날짜들은 "데이터 없음" {miss[-1]}')
@@ -382,7 +535,7 @@ def build(row_paths=(), base: dict | None = None, lite: bool = False, use_cache:
 
 
 def backup_bytes(payload: dict) -> bytes:
-    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    raw = to_json(payload).encode('utf-8')
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode='wb', compresslevel=6, mtime=0) as f:
         f.write(raw)
