@@ -138,3 +138,27 @@ def test_missing_date_column_is_error(tmp_path):
     pd.DataFrame({'a': [1]}).to_csv(p, index=False)
     with pytest.raises(Exception):
         bd.build([p])
+
+
+@pytest.mark.parametrize('enc,sep,fmt', [('utf-8-sig', ',', '%Y-%m-%d'), ('cp949', '\t', '%Y.%m.%d'),
+                                         ('utf-8-sig', ',', '%Y%m%d'), ('utf-16', '\t', None)])
+def test_csv_row_file(tmp_path, enc, sep, fmt):
+    # 엑셀에서 저장한 csv: 인코딩 · 구분자 · 날짜 형식 · 천단위 콤마가 달라도 같은 결과
+    df = ms.make_row('2024-01-01', '2024-01-10')
+    d = df.copy()
+    if fmt:
+        d['기간_일자'] = pd.to_datetime(d['기간_일자'], unit='D', origin='1899-12-30').dt.strftime(fmt)
+    d['지표_광고비'] = d['지표_광고비'].map(lambda v: f'{v:,}' if isinstance(v, (int, float)) else v)
+    p = tmp_path / 'row.csv'
+    d.to_csv(p, index=False, encoding=enc, sep=sep)
+    got = bd.build([p])
+    ref = bd.build([_pkl(tmp_path, df)])
+    assert got['row']['dates'] == ref['row']['dates'] == [f'2024-01-{i:02d}' for i in range(1, 11)]
+    assert sum(got['row']['f']['cost']) == sum(ref['row']['f']['cost'])
+    assert sum(got['row']['f']['fp']) == sum(ref['row']['f']['fp'])
+
+
+def _pkl(tmp_path, df):
+    p = tmp_path / 'ref.pkl'
+    df.to_pickle(p)
+    return p

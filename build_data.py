@@ -90,10 +90,32 @@ def clean_dim(s: pd.Series) -> pd.Series:
 
 
 def excel_serial_to_date(s: pd.Series) -> pd.Series:
+    """기간_일자 → 날짜. 엑셀 일련번호(46296) · 20261001 · 2026-10-01 · 2026.10.01 · 2026/10/01 모두 읽는다"""
     num = pd.to_numeric(s, errors='coerce')
     if num.notna().mean() > 0.9:
+        med = num.median()
+        if med > 1e7:                                   # 20261001
+            return pd.to_datetime(num.astype('Int64').astype(str), format='%Y%m%d', errors='coerce')
         return pd.to_datetime(num, unit='D', origin='1899-12-30').dt.normalize()
-    return pd.to_datetime(s.astype(str).str.strip(), errors='coerce').dt.normalize()
+    t = s.astype(str).str.strip().str.slice(0, 10).str.replace(r'[./]', '-', regex=True)
+    return pd.to_datetime(t, format='%Y-%m-%d', errors='coerce').fillna(pd.to_datetime(t, errors='coerce')).dt.normalize()
+
+
+def read_csv_any(path: Path) -> pd.DataFrame:
+    """엑셀에서 저장한 csv — 인코딩(UTF-8 · CP949 · UTF-16)과 구분자(쉼표 · 탭)를 알아서 맞춘다"""
+    raw = path.read_bytes()[:4096]
+    encs = ['utf-16'] if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else ['utf-8-sig', 'cp949']
+    for enc in encs:
+        try:
+            head = raw.decode(enc, errors='strict' if enc != 'utf-16' else 'ignore').splitlines()[0]
+        except UnicodeDecodeError:
+            continue
+        sep = '\t' if head.count('\t') > head.count(',') else ','
+        try:
+            return pd.read_csv(path, encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''])
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f'[로우] {path.name}: csv 인코딩을 읽지 못했습니다 (UTF-8 또는 CP949 로 저장해 주세요)')
 
 
 def name_of(src) -> str:
@@ -144,13 +166,20 @@ def load_row_raw(path: Path, use_cache: bool = True) -> pd.DataFrame:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
             df.to_pickle(cache)
         return df
-    # 테스트 · 대체 입력: csv / xlsx / pkl
+    # csv / xlsx / (테스트용) pkl
     if ext == '.pkl':
         df = pd.read_pickle(path)
     elif ext in ('.xlsx', '.xlsm'):
-        df = pd.read_excel(path, sheet_name=ROW_SHEET)
+        xl = pd.ExcelFile(path)
+        df = xl.parse(ROW_SHEET if ROW_SHEET in xl.sheet_names else xl.sheet_names[0], dtype=str)
     else:
-        df = pd.read_csv(path, encoding='utf-8-sig')
+        log(f'[로우] {path.name} 읽는 중…')
+        df = read_csv_any(path)
+    df.columns = [str(c).strip() for c in df.columns]
+    if ROW_DATE not in df.columns and '구분_기간' in df.columns:    # 기간_일자가 없으면 구분_기간(YYYYMMDD)
+        df[ROW_DATE] = df['구분_기간']
+    if ROW_DATE not in df.columns:
+        raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
     for c in want:
         if c not in df.columns:
             df[c] = None

@@ -184,7 +184,8 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
         <button data-page="diag">첫구매 진단</button>
       </nav>
       <div class="bk-tools">
-        <button class="btn" id="btnOpen" type="button" title="build_data.py 로 만든 백업(.json.gz) 열기">백업 파일 열기</button>
+        <button class="btn" id="btnSave" type="button" title="이 브라우저에 저장된 데이터를 파일로 받아 두기 (다른 PC · 브라우저로 옮길 때)" hidden>백업 내려받기</button>
+        <button class="btn" id="btnOpen" type="button" title="내려받아 둔 백업(.json.gz)으로 바꿔 열기">백업 파일 열기</button>
         <input type="file" id="fileOpen" accept=".gz,.json,application/json,application/gzip" hidden>
         <button class="btn" id="btnClear" type="button" title="이 브라우저에 저장된 데이터 지우기" hidden>데이터 지우기</button>
       </div>
@@ -272,6 +273,14 @@ async function idbGet() { try { const db = await idb(); return await new Promise
 async function idbPut(v) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, 'active'); t.oncomplete = res; t.onerror = () => rej(t.error); }); return true; } catch (e) { return false; } }
 async function idbDel() { try { const db = await idb(); await new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete('active'); t.oncomplete = res; t.onerror = res; }); } catch (e) { /* 무시 */ } }
 
+async function downloadBackup() {
+  if (!P) return;
+  const blob = new Blob([JSON.stringify(P)]);
+  const gz = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(gz); a.download = `광고신규대시보드_백업_${(P.lastDate || '').replace(/-/g, '')}.json.gz`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 async function readBackup(file) {
   let text;
   const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
@@ -295,13 +304,13 @@ async function openFile(file) {
     showEmpty(`<p class="neg">${esc(e.message)}</p>`);
   }
 }
-function toast(msg) { const d = document.createElement('div'); d.className = 'card pad warn'; d.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:50;font-size:13px'; d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 5000); }
+function toast(msg) { const d = document.createElement('div'); d.className = 'card pad warn'; d.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:50;font-size:13px;max-width:90vw'; d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 7000); }
 
 function use(p) {
   P = p;
   R = C.prepare(p.row, C.ROW_METS);
   for (const k in cache) delete cache[k];
-  $id('btnClear').hidden = false;
+  $id('btnClear').hidden = false; $id('btnSave').hidden = false;
   const src = p.source || {};
   const parts = [];
   if (src.row) parts.push(`일보고서 ${src.row.from.slice(2).replace(/-/g, '.')} ~ ${src.row.to.slice(2).replace(/-/g, '.')}`);
@@ -310,8 +319,8 @@ function use(p) {
 }
 function showEmpty(extra = '') {
   $id('main').innerHTML = `<div class="drop-empty"><h2>광고 신규 실적 대시보드</h2>
-    <p><b>백업 파일(.json.gz)</b>을 여기에 끌어다 놓거나 위쪽 <b>백업 파일 열기</b>로 고르세요.</p>
-    <p class="hint">백업이 없으면 Streamlit 화면 맨 위 <b>원천 파일로 백업 만들기</b>에서 로우 시트 xlsb 를 올려 만들거나, 로컬에서 <code>python build_data.py</code> 로 만듭니다. 열어 둔 데이터는 이 브라우저에만 저장됩니다.</p>${extra}
+    <p>Streamlit 화면 맨 위 <b>📂 원천 파일 올리기</b>에서 로우 파일(xlsb · csv · xlsx)을 올리면 이 브라우저에 저장되고, 다음부터는 새 날짜 파일만 올리면 이어 붙습니다.</p>
+    <p class="hint">내려받아 둔 백업(.json.gz)이 있으면 여기에 끌어다 놓거나 <b>백업 파일 열기</b>로 고르세요. 데이터는 서버가 아니라 이 브라우저에만 저장됩니다.</p>${extra}
     <p><button class="btn" type="button" onclick="document.getElementById('fileOpen').click()">백업 파일 열기</button></p></div>`;
 }
 
@@ -964,7 +973,8 @@ document.addEventListener('click', e => {
   if (t.id === 'btnFilt') { S.filtOpen = !S.filtOpen; syncBar(); save(); return; }
   if (t.id === 'btnFilt2') { S.filtOpen = !S.filtOpen; syncBar(); save(); return; }
   if (t.id === 'btnOpen') { $id('fileOpen').click(); return; }
-  if (t.id === 'btnClear') { if (confirm('이 브라우저에 저장된 백업 데이터를 지울까요?')) { idbDel().then(() => { P = R = A = null; $id('btnClear').hidden = true; $id('asof').textContent = ''; showEmpty(); }); } return; }
+  if (t.id === 'btnSave') { downloadBackup(); return; }
+  if (t.id === 'btnClear') { if (confirm('이 브라우저에 저장된 백업 데이터를 지울까요?')) { idbDel().then(() => { P = R = null; $id('btnClear').hidden = true; $id('btnSave').hidden = true; $id('asof').textContent = ''; showEmpty(); }); } return; }
   if (ds.tw != null) { const o = new Set(S.drill.open); o.has(ds.tw) ? o.delete(ds.tw) : o.add(ds.tw); S.drill.open = [...o]; render(true); return; }
   if (ds.sel != null) { S.drill.sel = ds.sel; render(true); const s = $id('drSelSec'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
@@ -1006,15 +1016,28 @@ let rzT = null, lastW = innerWidth;
 addEventListener('resize', () => { if (Math.abs(innerWidth - lastW) < 40) return; lastW = innerWidth; clearTimeout(rzT); rzT = setTimeout(() => render(true), 250); });
 
 async function preload() {
-  // Streamlit 에서 방금 만든 백업 — app.py 가 window.AD_PRELOAD(base64 gzip) 로 넣어 준다
+  // Streamlit 에서 방금 올린 원천으로 만든 백업 — app.py 가 window.AD_PRELOAD(base64 gzip) 로 넣어 준다.
+  // 이 브라우저에 저장된 데이터에 합친다: 새 파일에 있는 날짜는 교체, 나머지 날짜는 그대로
   const b64 = window.AD_PRELOAD;
   if (!b64) return false;
   let done = '';
   try { done = localStorage.getItem('ad-new-dashboard-preload') || ''; } catch (e) { /* 무시 */ }
-  if (done === window.AD_PRELOAD_ID) return false;      // 이미 열었던 것 — 사용자가 그 뒤 다른 백업을 열었을 수 있다
-  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  await openFile(new File([bin], 'preload.json.gz'));
-  try { localStorage.setItem('ad-new-dashboard-preload', window.AD_PRELOAD_ID || ''); } catch (e) { /* 무시 */ }
+  if (done === window.AD_PRELOAD_ID) return false;      // 이미 합친 것 (화면이 다시 그려진 경우)
+  $id('main').innerHTML = '<div class="loading">올린 원천을 저장된 데이터에 합치는 중…</div>';
+  try {
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const add = await readBackup(new File([bin], 'preload.json.gz'));
+    const base = await idbGet();
+    const merged = C.mergeBackup(base, add);
+    const stored = await idbPut(merged);
+    try { localStorage.setItem('ad-new-dashboard-preload', window.AD_PRELOAD_ID || ''); } catch (e) { /* 무시 */ }
+    use(merged);
+    const m = merged.merged;
+    toast(m ? `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일` : `저장했습니다 · ${merged.source.row.from} ~ ${merged.source.row.to}`);
+    if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 사라집니다 — 백업 내려받기로 받아 두세요');
+  } catch (e) {
+    showEmpty(`<p class="neg">${esc(e.message)}</p>`);
+  }
   return true;
 }
 (async () => {

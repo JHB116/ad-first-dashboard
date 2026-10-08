@@ -137,6 +137,56 @@ open(d/'b.json', 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))
   assert.ok(Number.isNaN(t.total[1].nb)); assert.ok(t.total[1].fp > 0); assert.ok(t.total[0].nb > 0);
 });
 
+// 샘플 원천 파일 조합으로 백업 payload 만들기
+const SAMPLE_DIR = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adsampleM-'));
+  execFileSync(process.env.PYTHON || 'python3', [path.join(ROOT, 'tests/make_sample.py'), dir], { stdio: 'ignore' });
+  return dir;
+})();
+function buildFiles(files) {
+  const out = path.join(SAMPLE_DIR, `p${Math.random().toString(36).slice(2)}.json`);
+  const code = `import sys, json; sys.path.insert(0, ${JSON.stringify(ROOT)}); import build_data as bd
+from pathlib import Path
+d = Path(${JSON.stringify(SAMPLE_DIR)})
+p = bd.build([d/f for f in ${JSON.stringify(files)}])
+open(${JSON.stringify(out)}, 'w', encoding='utf-8').write(json.dumps(p, ensure_ascii=False))`;
+  execFileSync(process.env.PYTHON || 'python3', ['-c', code], { stdio: 'ignore' });
+  return JSON.parse(fs.readFileSync(out, 'utf8'));
+}
+function sumBy(P, keyFn) {
+  const r = P.row, m = new Map();
+  for (let i = 0; i < r.f.d.length; i++) { const k = keyFn(r, i); m.set(k, (m.get(k) || 0) + r.f.cost[i] + r.f.fp[i] * 1e3 + r.f.buy[i]); }
+  return m;
+}
+
+test('브라우저 합치기 = 한 번에 빌드한 결과 (새 파일 날짜는 교체)', () => {
+  const base = buildFiles(['sample_row_2024.pkl', 'sample_row.pkl']);
+  const add = buildFiles(['sample_row_1001.pkl']);
+  const full = buildFiles(['sample_row_2024.pkl', 'sample_row.pkl', 'sample_row_1001.pkl']);
+  const mg = C.mergeBackup(base, add);
+  assert.deepEqual(mg.row.dates, full.row.dates);
+  assert.deepEqual(mg.row.na, full.row.na);
+  assert.deepEqual(mg.merged, { added: 5, replaced: 1, kept: base.row.dates.length - 1 });
+  assert.equal(mg.source.row.to, '2026-10-04'); assert.equal(mg.source.row.from, '2024-01-01');
+  for (const key of [(r, i) => r.dates[r.f.d[i]] + '|' + r.dims.t[r.f.t[i]], (r, i) => r.dims.bp[r.f.bp[i]] + '|' + r.dims.dev[r.f.dev[i]] + '|' + r.dims.camp[r.f.camp[i]]]) {
+    const a = sumBy(mg, key), b = sumBy(full, key);
+    assert.equal(a.size, b.size);
+    for (const [k, v] of b) near(a.get(k), v, 1e-6);
+  }
+  // 합친 결과도 화면 산식에 그대로 들어간다
+  const R3 = C.prepare(mg.row, C.ROW_METS);
+  assert.equal(R3.dates.length, full.row.dates.length);
+  // 같은 파일을 두 번 합쳐도 결과가 같다 (날짜 교체라 중복 집계 없음)
+  const mg2 = C.mergeBackup(mg, add);
+  assert.equal(mg2.row.n, mg.row.n);
+  assert.deepEqual(mg2.merged, { added: 0, replaced: 6, kept: mg.row.dates.length - 6 });
+});
+
+test('합치기: 저장된 데이터가 없으면 새 백업 그대로', () => {
+  const add = buildFiles(['sample_row_1001.pkl']);
+  assert.equal(C.mergeBackup(null, add), add);
+});
+
 test('표기 규칙', () => {
   assert.equal(C.fmt('money', 12_300_000), '12.3');
   assert.equal(C.fmt('money', 50_000), '5.0만');

@@ -321,6 +321,67 @@
     return { rows, R0, R1, mix, within, F0, F1, O0, O1 };
   }
 
+  // ── 백업 합치기 ────────────────────────────────────────────────────
+  // 브라우저에 저장된 백업(base)에 새로 만든 백업(add)을 합친다. add 에 있는 날짜는 add 값으로 교체, 나머지는 base 유지
+  function mergeBackup(base, add) {
+    if (!base || !base.row) return add;
+    if (!add || !add.row) return base;
+    const B = base.row, A = add.row, addDates = new Set(A.dates);
+    const dimKeys = [...new Set([...Object.keys(B.dims), ...Object.keys(A.dims)])];
+    const metKeys = [...new Set([...Object.keys(B.f), ...Object.keys(A.f)])].filter(k => k !== 'd' && !dimKeys.includes(k));
+    const keepB = B.dates.map(d => !addDates.has(d));
+    const dates = [...B.dates.filter((d, i) => keepB[i]), ...A.dates].sort();
+    const dIx = new Map(dates.map((d, i) => [d, i]));
+    // 차원 값 사전 합치기 (광고유형은 고정 순서)
+    const dims = {}, remap = { B: {}, A: {} };
+    for (const k of dimKeys) {
+      const bv = B.dims[k] || ['-'], av = A.dims[k] || ['-'];
+      let vals = [...new Set([...bv, ...av])];
+      if (k === 't') vals = TYPES.filter(t => vals.includes(t)).concat(vals.filter(t => !TYPES.includes(t)));
+      const ix = new Map(vals.map((v, i) => [v, i]));
+      dims[k] = vals; remap.B[k] = bv.map(v => ix.get(v)); remap.A[k] = av.map(v => ix.get(v));
+    }
+    const f = { d: [] };
+    for (const k of [...dimKeys, ...metKeys]) f[k] = [];
+    const push = (S, side, keep) => {
+      const n = S.f.d.length;
+      for (let i = 0; i < n; i++) {
+        const di = S.f.d[i];
+        if (keep && !keep[di]) continue;
+        f.d.push(dIx.get(S.dates[di]));
+        for (const k of dimKeys) f[k].push(S.f[k] ? remap[side][k][S.f[k][i]] : remap[side][k][0]);
+        for (const m of metKeys) f[m].push(S.f[m] ? S.f[m][i] : 0);
+      }
+    };
+    push(B, 'B', keepB);
+    push(A, 'A', null);
+    // '데이터 없음' 날짜: base 의 남은 날짜 + add 날짜 (한쪽에 지표 컬럼이 아예 없으면 그쪽 날짜 전부)
+    const na = {};
+    for (const m of metKeys) {
+      const set = new Set();
+      if (B.f[m]) (B.na && B.na[m] || []).forEach(d => { if (!addDates.has(d)) set.add(d); });
+      else B.dates.forEach((d, i) => { if (keepB[i]) set.add(d); });
+      if (A.f[m]) (A.na && A.na[m] || []).forEach(d => set.add(d));
+      else A.dates.forEach(d => set.add(d));
+      if (set.size) na[m] = [...set].sort();
+    }
+    const sb = (base.source || {}).row || {}, sa = (add.source || {}).row || {};
+    const ub = sb.unclassified || {}, ua = sa.unclassified || {};
+    const files = [...(sb.files || []), ...(sa.files || [])];
+    const row = {
+      files, file: files.slice(-3).join(', '), rows: f.d.length, from: dates[0], to: dates[dates.length - 1], days: dates.length,
+      unclassified: { rows: (ub.rows || 0) + (ua.rows || 0), cost: (ub.cost || 0) + (ua.cost || 0), join: (ub.join || 0) + (ua.join || 0),
+        adtypes: [...new Set([...(ub.adtypes || []), ...(ua.adtypes || [])])] },
+      na: Object.fromEntries(Object.entries(na).map(([m, v]) => [m, { from: v[0], to: v[v.length - 1], days: v.length }])),
+    };
+    const replaced = B.dates.filter(d => addDates.has(d)).length;
+    return {
+      format: add.format, version: add.version, created: add.created, lastDate: dates[dates.length - 1],
+      source: { ...(base.source || {}), row }, row: { dates, dims, f, n: f.d.length, na },
+      merged: { added: A.dates.length - replaced, replaced, kept: dates.length - A.dates.length },
+    };
+  }
+
   // ── 표기 ───────────────────────────────────────────────────────────
   // 광고비·거래액: 백만원 소수 1자리(10만원 이하면 만원) · CPA: 만원 · 비율: %
   function fmtNum(v, dp = 1) {
@@ -359,7 +420,7 @@
     div, pct, dnum, iso, dow, isOff, monthDays, weekInfo,
     prepare, daily, addSeries, naIn, periods, compareIdx, rangeIdx, sumIdx, value, seriesValues,
     tree, children, keyWhere, avgOf, weekdaySplit, weekdayAdjusted, baseline, sameDateIn, mixDecompose,
-    fmt, fmtNum, scaled, unit,
+    fmt, fmtNum, scaled, unit, mergeBackup,
   };
   root.AdCalc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

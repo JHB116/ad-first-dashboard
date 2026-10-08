@@ -17,4 +17,5 @@ node --test tests/*.mjs
 python -c "from streamlit.testing.v1 import AppTest; at=AppTest.from_file('app.py'); at.run(); print(at.exception or 'OK')"
 ```
 
-화면을 바꾸면 `python tests/make_sample.py data/sample && python build_data.py --row data/sample/sample_row.pkl data/sample/sample_row_1001.pkl`로 가짜 백업을 만들어 브라우저에서 해당 상호작용을 확인한다. 업로드를 바꾸면 `python -m streamlit run app.py`에서 xlsb 업로드 → 백업 만들기 → 대시보드 자동 열기까지 확인한다.
+화면을 바꾸면 `python tests/make_sample.py data/sample && python build_data.py --row data/sample/sample_row.pkl data/sample/sample_row_1001.pkl`로 가짜 백업을 만들어 브라우저에서 해당 상호작용을 확인한다. 업로드를 바꾸면 `python -m streamlit run app.py`에서 원천 업로드 → 저장된 데이터에 합치기 → 새로고침 후 유지까지 확인한다.
+- 원천을 올리면 서버(`build_data.build`)는 올린 파일만 백업 형태로 바꾸고, 합치기는 브라우저(`calc.js` `mergeBackup`)가 한다. 두 결과는 '한 번에 빌드'와 같아야 한다(`tests/test_calc.mjs`).

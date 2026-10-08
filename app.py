@@ -3,8 +3,8 @@
 
 dashboard.html 을 화면 가득 띄운다(첫구매 실적 대시보드와 같은 구조). 실적 데이터는 저장소에 없다.
 - 백업(.json.gz)을 화면에 끌어다 놓으면 보는 사람의 브라우저(IndexedDB)에만 저장해 조회한다.
-- 맨 위 '원천 파일로 백업 만들기'에서 로우 시트 xlsb 를 올리면(기존 백업에 이어 붙이기 가능)
-  서버 메모리에서 백업을 만들어 바로 열어 주고 내려받게 한다. 올린 원천은 저장하지 않는다.
+- 맨 위 '원천 파일 올리기'에서 로우 파일(xlsb · csv · xlsx)을 올리면 서버 메모리에서 백업 형태로 바꿔 넘기고,
+  대시보드가 브라우저에 저장된 데이터에 날짜 단위로 합친다(같은 날짜는 교체). 올린 원천은 서버에 저장하지 않는다.
 """
 import base64
 import contextlib
@@ -45,8 +45,8 @@ def page(stamp):
     return html.replace(MARKER, f'<script>\n{calc}\n</script>', 1)
 
 
-def run_build(row_files, base_file, lite):
-    """올린 파일 → 백업 bytes. pyxlsb 는 경로가 필요해 임시 폴더에 잠깐 쓴 뒤 지운다"""
+def run_build(row_files):
+    """올린 원천 → 백업 bytes. pyxlsb 는 경로가 필요해 임시 폴더에 잠깐 쓴 뒤 지운다"""
     log = io.StringIO()
     with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(log):
         def save(f, k):
@@ -55,40 +55,36 @@ def run_build(row_files, base_file, lite):
             p.write_bytes(f.getbuffer())
             return p
         rows = [save(f, k) for k, f in enumerate(row_files)]
-        base = bd.read_backup(io.BytesIO(base_file.getvalue())) if base_file else None
-        payload = bd.build(rows, base=base, lite=lite, use_cache=False)
-    return bd.backup_bytes(payload), bd.backup_name(payload), payload['source'], log.getvalue()
+        payload = bd.build(rows, use_cache=False)
+    return bd.backup_bytes(payload), payload['source'], log.getvalue()
 
 
-with st.expander('📂 원천 파일로 백업 만들기 · 새 날짜 추가', expanded=False):
-    st.caption('로우 시트 xlsb(일일보고서 전체든 로우 시트만 뽑은 파일이든 같음)를 올리면 백업을 만들어 바로 엽니다. '
-               '기존 백업을 같이 올리면 새 파일에 있는 날짜만 교체 · 추가합니다. 올린 원천은 서버에 저장하지 않습니다.')
-    c1, c2 = st.columns(2)
-    row_files = c1.file_uploader('로우 시트 xlsb (여러 개 가능 · 같은 날짜는 뒤 파일이 이김)', type=['xlsb'], accept_multiple_files=True)
-    base_file = c2.file_uploader('이어 붙일 기존 백업 (선택)', type=['gz', 'json'])
-    lite = st.checkbox('가볍게 (하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외)', value=False)
-    if st.button('백업 만들기', type='primary', disabled=not row_files):
-        with st.spinner('읽는 중… 큰 xlsb 는 몇 분 걸릴 수 있습니다'):
+with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 새 날짜만)', expanded=False):
+    st.caption('로우 파일(xlsb · csv · xlsx, 첫 행 헤더)을 올리면 이 브라우저에 저장된 데이터에 합칩니다. '
+               '올린 파일에 있는 날짜는 새 값으로 바뀌고, 나머지 날짜(예: 2024년)는 그대로 남습니다. '
+               '데이터는 서버가 아니라 이 브라우저에만 저장됩니다 — 다른 PC에서 보려면 대시보드의 \'백업 내려받기\'로 옮기세요.')
+    row_files = st.file_uploader('로우 파일 (여러 개 가능 · 같은 날짜는 뒤 파일이 이김)', type=['xlsb', 'csv', 'xlsx'], accept_multiple_files=True)
+    if st.button('올리기', type='primary', disabled=not row_files):
+        with st.spinner('읽는 중… 큰 파일은 몇 분 걸릴 수 있습니다'):
             try:
-                data, name, source, log = run_build(row_files, base_file, lite)
-                st.session_state['built'] = {'data': data, 'name': name, 'source': source, 'log': log,
+                data, source, log = run_build(row_files)
+                st.session_state['built'] = {'data': data, 'source': source, 'log': log,
                                              'id': hashlib.sha1(data).hexdigest()[:12]}
             except Exception as e:  # 원천 형식 오류를 화면에 보여 준다
                 st.session_state.pop('built', None)
-                st.error(f'백업을 만들지 못했습니다: {e}')
+                st.error(f'읽지 못했습니다: {e}')
     built = st.session_state.get('built')
     if built:
         r = built['source']['row']
-        st.success(f"백업을 만들어 아래 대시보드에 열었습니다 · {r['from']} ~ {r['to']} ({r['days']}일) · {len(built['data']) / 1e6:.1f}MB")
-        st.download_button('백업 내려받기 (다음에 이 파일을 열거나 이어 붙이기)', built['data'], file_name=built['name'], mime='application/gzip')
-        with st.expander('빌드 로그'):
+        st.success(f"{r['from']} ~ {r['to']} ({r['days']}일)을 읽어 아래 대시보드의 저장된 데이터에 합쳤습니다")
+        with st.expander('읽기 로그'):
             st.code(built['log'] or '(없음)')
 
 stamp = tuple((ROOT / f).stat().st_mtime for f in ('dashboard.html', 'calc.js'))
 html = page(stamp)
 built = st.session_state.get('built')
 if built:
-    # 방금 만든 백업을 대시보드가 바로 열도록 넣어 준다 (dashboard.html 의 preload())
+    # 방금 올린 원천을 대시보드가 저장된 데이터에 합치도록 넣어 준다 (dashboard.html 의 preload())
     pre = f"<script>window.AD_PRELOAD_ID = '{built['id']}'; window.AD_PRELOAD = '{base64.b64encode(built['data']).decode()}';</script>\n"
     html = html.replace('<script>\n', pre + '<script>\n', 1)
 if hasattr(st, 'iframe'):      # Streamlit 1.5x 이후 권장 API

@@ -1,5 +1,5 @@
-# Streamlit Cloud 배포용 — 화면은 HTML 이라 streamlit 만 필요
+# Streamlit Cloud 배포용 — 화면은 HTML, 원천 업로드 → 백업 생성은 pandas · pyxlsb · openpyxl
 streamlit>=1.40
-# 로컬 빌드(build_data.py)용 — 배포에는 필요 없지만 같이 두어도 무해
 pandas>=2.0
 pyxlsb>=1.0.10
+openpyxl>=3.1
