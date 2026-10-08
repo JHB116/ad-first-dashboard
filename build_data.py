@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""광고 신규 실적 대시보드 — 원천(로우 시트 xlsb) → 백업 파일(.json.gz)
+"""광고 신규 실적 대시보드 — 원천(로우 파일 xlsb · csv · xlsx) → 백업 파일(.json.gz)
 
-사용법
-    python build_data.py                                  # data/raw/ 의 *.xlsb 전부로 새로 빌드
-    python build_data.py --row a.xlsb b.xlsb              # 파일 직접 지정 (여러 개 가능)
+사용법 (PC — make_backup.bat 을 더블클릭해도 같다)
+    python build_data.py                                  # data/raw/ 의 로우 파일 전부 → 백업
+    python build_data.py --row a.xlsb b.csv               # 파일 직접 지정 (여러 개 가능)
     python build_data.py --base 기존백업.json.gz --row 1001.xlsb   # 기존 백업에 새 날짜 추가 · 같은 날짜 교체
     python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 차원 빼고 가볍게
 
-결과: backup/광고신규대시보드_백업_YYYYMMDD.json.gz  → 대시보드 화면에 끌어다 놓아 연다.
-Streamlit 화면의 '원천 파일로 백업 만들기'도 같은 함수(build)를 쓴다.
+결과: backup/광고신규대시보드_백업_YYYYMMDD.json.gz → 대시보드에 끌어다 놓으면 저장된 데이터에 날짜 단위로 합쳐진다.
+Streamlit 화면의 '원천 파일 올리기'도 같은 함수(build)를 쓴다.
 
-- 로우 원천: 시트 '로우'(첫 행 헤더). 일일보고서 xlsb 전체든, 로우 시트만 뽑은 xlsb 든 같다.
+- 로우 원천: 시트 '로우'(첫 행 헤더). 일일보고서 xlsb 전체든, 로우 시트만 뽑은 파일이든, csv 든 같다.
 - 같은 날짜가 여러 파일에 있으면 뒤(수정시각이 늦은) 파일 값을 쓴다. 기존 백업보다 새 파일이 우선.
-- 큰 xlsb 는 처음 1회만 읽고 data/cache/ 에 pickle 로 저장한다(원본 수정시각이 같으면 캐시 사용).
+- 읽은 결과는 data/cache/ 에 저장해 두고, 원본이 바뀌지 않았으면 다시 읽지 않는다(예: 2024년 csv 는 처음 한 번만).
 - 집계 규칙은 docs/METRICS.md 와 같다. 바꾸면 문서와 tests/ 도 함께 고친다.
 """
 from __future__ import annotations
@@ -561,16 +561,17 @@ def by_mtime(paths):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='광고 신규 실적 대시보드 백업 만들기')
-    ap.add_argument('--row', type=Path, nargs='*', help='로우 시트 xlsb 들 (기본: data/raw 의 *.xlsb 전부, 수정시각 순)')
+    ap.add_argument('--row', type=Path, nargs='*', help='로우 파일들 (기본: data/raw 의 xlsb · csv · xlsx 전부, 수정시각 순)')
     ap.add_argument('--base', type=Path, help='이어 붙일 기존 백업(.json.gz)')
     ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외')
     ap.add_argument('--out-stamp', help='파일명 날짜 (기본: 로우 최신일)')
     a = ap.parse_args(argv)
 
-    rows = a.row if a.row is not None else by_mtime(RAW_DIR.glob('*.xlsb'))
+    rows = a.row if a.row is not None else by_mtime(p for p in RAW_DIR.glob('*')
+                                                    if p.suffix.lower() in ROW_EXT and not p.name.startswith(('~$', '.')))
     base = read_backup(a.base) if a.base else None
     if not rows and not base:
-        sys.exit('원천 파일이 없습니다. data/raw/ 에 로우 시트 xlsb 를 넣거나 --row 로 지정하세요.')
+        sys.exit(f'원천 파일이 없습니다. {RAW_DIR} 에 로우 파일(xlsb · csv · xlsx)을 넣거나 --row 로 지정하세요.')
     log(f'로우: {[Path(p).name for p in rows] or "(없음)"}' + (f' / 기존 백업: {a.base.name}' if base else ''))
     try:
         payload = build(rows, base=base, lite=a.lite)

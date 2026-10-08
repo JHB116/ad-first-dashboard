@@ -185,7 +185,7 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
       </nav>
       <div class="bk-tools">
         <button class="btn" id="btnSave" type="button" title="이 브라우저에 저장된 데이터를 파일로 받아 두기 (다른 PC · 브라우저로 옮길 때)" hidden>백업 내려받기</button>
-        <button class="btn" id="btnOpen" type="button" title="내려받아 둔 백업(.json.gz)으로 바꿔 열기">백업 파일 열기</button>
+        <button class="btn" id="btnOpen" type="button" title="PC에서 만든 백업(.json.gz)을 저장된 데이터에 합치기 (같은 날짜는 교체)">백업 파일 열기</button>
         <input type="file" id="fileOpen" accept=".gz,.json,application/json,application/gzip" hidden>
         <button class="btn" id="btnClear" type="button" title="이 브라우저에 저장된 데이터 지우기" hidden>데이터 지우기</button>
       </div>
@@ -292,14 +292,20 @@ async function readBackup(file) {
   if (p.format !== 'ad-new-dashboard-backup') throw new Error('광고 신규 실적 대시보드 백업이 아닙니다 (build_data.py 로 만든 .json.gz 파일을 여세요)');
   return p;
 }
+// 새 백업을 이 브라우저에 저장된 데이터에 합친다 — 새 백업에 있는 날짜는 교체, 나머지 날짜(예: 2024년)는 그대로
+async function mergeAndStore(add) {
+  const base = await idbGet();
+  const merged = C.mergeBackup(base, add);
+  const stored = await idbPut(merged);
+  use(merged);
+  const m = merged.merged, r = merged.source.row;
+  toast(m ? `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일 → ${r.from} ~ ${r.to}` : `저장했습니다 · ${r.from} ~ ${r.to}`);
+  if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 사라집니다 — 백업 내려받기로 받아 두세요');
+}
 async function openFile(file) {
-  const main = $id('main');
-  main.innerHTML = '<div class="loading">백업 읽는 중…</div>';
+  $id('main').innerHTML = '<div class="loading">백업 읽어서 합치는 중…</div>';
   try {
-    const p = await readBackup(file);
-    const stored = await idbPut(p);
-    use(p);
-    if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 다시 열어야 합니다');
+    await mergeAndStore(await readBackup(file));
   } catch (e) {
     showEmpty(`<p class="neg">${esc(e.message)}</p>`);
   }
@@ -320,7 +326,7 @@ function use(p) {
 function showEmpty(extra = '') {
   $id('main').innerHTML = `<div class="drop-empty"><h2>광고 신규 실적 대시보드</h2>
     <p>Streamlit 화면 맨 위 <b>📂 원천 파일 올리기</b>에서 로우 파일(xlsb · csv · xlsx)을 올리면 이 브라우저에 저장되고, 다음부터는 새 날짜 파일만 올리면 이어 붙습니다.</p>
-    <p class="hint">내려받아 둔 백업(.json.gz)이 있으면 여기에 끌어다 놓거나 <b>백업 파일 열기</b>로 고르세요. 데이터는 서버가 아니라 이 브라우저에만 저장됩니다.</p>${extra}
+    <p class="hint">PC에서 <code>make_backup.bat</code>(또는 <code>python build_data.py</code>)으로 만든 백업(.json.gz)은 여기에 끌어다 놓거나 <b>백업 파일 열기</b>로 고르세요 — 저장된 데이터에 날짜 단위로 합쳐집니다. 데이터는 서버가 아니라 이 브라우저에만 저장됩니다.</p>${extra}
     <p><button class="btn" type="button" onclick="document.getElementById('fileOpen').click()">백업 파일 열기</button></p></div>`;
 }
 
@@ -1027,14 +1033,8 @@ async function preload() {
   try {
     const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     const add = await readBackup(new File([bin], 'preload.json.gz'));
-    const base = await idbGet();
-    const merged = C.mergeBackup(base, add);
-    const stored = await idbPut(merged);
     try { localStorage.setItem('ad-new-dashboard-preload', window.AD_PRELOAD_ID || ''); } catch (e) { /* 무시 */ }
-    use(merged);
-    const m = merged.merged;
-    toast(m ? `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일` : `저장했습니다 · ${merged.source.row.from} ~ ${merged.source.row.to}`);
-    if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 사라집니다 — 백업 내려받기로 받아 두세요');
+    await mergeAndStore(add);
   } catch (e) {
     showEmpty(`<p class="neg">${esc(e.message)}</p>`);
   }
