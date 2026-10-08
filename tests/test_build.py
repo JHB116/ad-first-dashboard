@@ -162,3 +162,24 @@ def _pkl(tmp_path, df):
     p = tmp_path / 'ref.pkl'
     df.to_pickle(p)
     return p
+
+
+@pytest.mark.parametrize('enc', ['utf-8-sig', 'utf-8', 'cp949'])
+@pytest.mark.parametrize('shift', range(4))
+def test_csv_korean_at_byte_boundary(tmp_path, enc, shift):
+    # 판별용으로 앞부분을 바이트 수로 자르면 한글 글자 중간이 잘려 '인코딩을 읽지 못했습니다'가 나던 문제
+    hdr = '기간_일자,구분_광고유형,구분_채널,구분_매체명,구분_캠페인,지표_광고비\n'
+    body = ''.join(f'2024-01-{(i % 28) + 1:02d},SA,브랜드검색,네이버,{"x" * shift}가나다라마바사캠페인{i},1000\n' for i in range(400))
+    p = tmp_path / 'row.csv'
+    p.write_bytes((hdr + body).encode(enc))
+    df = bd.read_csv_any(p)
+    assert len(df) == 400 and df.columns[0] == '기간_일자' and df.iloc[0, 4].endswith('가나다라마바사캠페인0')
+
+
+def test_csv_partly_broken_bytes_still_reads(tmp_path):
+    hdr = '기간_일자,구분_광고유형,구분_채널,구분_매체명,구분_캠페인,지표_광고비\n'
+    body = ''.join(f'2024-01-{(i % 28) + 1:02d},SA,브랜드검색,네이버,캠페인{i},1000\n' for i in range(300)).encode('utf-8')
+    p = tmp_path / 'row.csv'
+    p.write_bytes(hdr.encode('utf-8') + body[:3000] + b'\xff\xfe' + body[3000:])
+    df = bd.read_csv_any(p)
+    assert len(df) == 300 and df.columns[0] == '기간_일자'

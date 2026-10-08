@@ -77,6 +77,9 @@ with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 
     if built:
         r = built['source']['row']
         st.success(f"{r['from']} ~ {r['to']} ({r['days']}일)을 읽어 아래 대시보드의 저장된 데이터에 합쳤습니다")
+        for line in built['log'].splitlines():      # 읽기 중 경고(없는 컬럼 · 깨진 글자 등)
+            if line.strip().startswith('!'):
+                st.warning(line.strip().lstrip('! '))
         with st.expander('읽기 로그'):
             st.code(built['log'] or '(없음)')
 

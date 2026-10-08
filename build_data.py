@@ -103,19 +103,31 @@ def excel_serial_to_date(s: pd.Series) -> pd.Series:
 
 def read_csv_any(path: Path) -> pd.DataFrame:
     """엑셀에서 저장한 csv — 인코딩(UTF-8 · CP949 · UTF-16)과 구분자(쉼표 · 탭)를 알아서 맞춘다"""
-    raw = path.read_bytes()[:4096]
-    encs = ['utf-16'] if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else ['utf-8-sig', 'cp949']
-    for enc in encs:
-        try:
-            head = raw.decode(enc, errors='strict' if enc != 'utf-16' else 'ignore').splitlines()[0]
-        except UnicodeDecodeError:
-            continue
-        sep = '\t' if head.count('\t') > head.count(',') else ','
-        try:
-            return pd.read_csv(path, encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''])
-        except UnicodeDecodeError:
-            continue
-    raise ValueError(f'[로우] {path.name}: csv 인코딩을 읽지 못했습니다 (UTF-8 또는 CP949 로 저장해 주세요)')
+    data = path.read_bytes()
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        encs = ['utf-16']
+    else:
+        # 앞부분을 바이트 수로 자르면 한글 글자 중간이 잘려 판별이 틀어진다 → 전체로 엄격 판별
+        encs = []
+        for enc in ('utf-8-sig', 'cp949'):
+            try:
+                data.decode(enc)
+                encs = [enc]
+                break
+            except UnicodeDecodeError:
+                pass
+    bad = None
+    if not encs:
+        # 둘 다 엄격하게는 안 맞으면(깨진 글자 일부) 덜 깨지는 쪽으로 읽고 깨진 글자만 대체
+        cnt = {enc: data.decode(enc, errors='replace').count('\ufffd') for enc in ('utf-8-sig', 'cp949')}
+        enc = min(cnt, key=cnt.get)
+        encs, bad = [enc], cnt[enc]
+        log(f'  ! {path.name}: 인코딩이 일부 깨져 있어 {enc} 로 읽고 깨진 글자 {bad}개를 대체했습니다')
+    enc = encs[0]
+    first = data[:data.find(b'\n') if b'\n' in data else len(data)].decode(enc, errors='replace')
+    sep = '\t' if first.count('\t') > first.count(',') else ','
+    return pd.read_csv(io.BytesIO(data), encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''],
+                       encoding_errors='replace' if bad else 'strict')
 
 
 def name_of(src) -> str:
