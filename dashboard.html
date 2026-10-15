@@ -1031,10 +1031,11 @@ async function preload() {
   if (done === window.AD_PRELOAD_ID) return false;      // 이미 합친 것 (화면이 다시 그려진 경우)
   $id('main').innerHTML = '<div class="loading">올린 원천을 저장된 데이터에 합치는 중…</div>';
   try {
-    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const add = await readBackup(new File([bin], 'preload.json.gz'));
     try { localStorage.setItem('ad-new-dashboard-preload', window.AD_PRELOAD_ID || ''); } catch (e) { /* 무시 */ }
-    await mergeAndStore(add);
+    for (const one of (Array.isArray(b64) ? b64 : [b64])) {      // 올린 순서대로 (같은 날짜는 뒤 것이 이김)
+      const bin = Uint8Array.from(atob(one), c => c.charCodeAt(0));
+      await mergeAndStore(await readBackup(new File([bin], 'preload.json.gz')));
+    }
   } catch (e) {
     showEmpty(`<p class="neg">${esc(e.message)}</p>`);
   }

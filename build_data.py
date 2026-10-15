@@ -277,6 +277,18 @@ def unpack_upload(name: str, src, out_dir: Path) -> list[Path]:
     return [p]
 
 
+def is_backup(path: Path) -> bool:
+    """이 대시보드의 백업 파일(.json / .json.gz)인지 — 원천 올리기 칸에 백업을 넣어도 알아보게"""
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(2)
+        opener = gzip.open if head == b'\x1f\x8b' else open
+        with opener(path, 'rb') as f:
+            return FORMAT.encode() in f.read(400)
+    except OSError:
+        return False
+
+
 def load_row_raw(path: Path, use_cache: bool = True) -> pd.DataFrame:
     """원천 전체를 한 번에 (작은 파일 · 테스트용). 큰 파일은 load_prepped 를 쓴다"""
     return pd.concat(list(iter_raw(path)), ignore_index=True)

@@ -207,3 +207,14 @@ def test_unpack_upload_zip_gz(tmp_path):
     a, b = bd.build(ps), bd.build(pg)
     assert a['row']['dates'] == b['row']['dates'] == [f'2024-01-0{i}' for i in range(1, 6)]
     assert sum(a['row']['f']['cost']) == sum(b['row']['f']['cost'])
+
+
+def test_is_backup(payload, tmp_path):
+    import gzip as gz
+    p = tmp_path / 'b.json.gz'
+    p.write_bytes(bd.backup_bytes(payload))
+    j = tmp_path / 'b.json'
+    j.write_bytes(gz.decompress(p.read_bytes()))
+    c = tmp_path / 'r.csv'
+    c.write_text('기간_일자,구분_광고유형\n2024-01-01,SA\n', encoding='utf-8')
+    assert bd.is_backup(p) and bd.is_backup(j) and not bd.is_backup(c)

@@ -46,17 +46,32 @@ def page(stamp):
     return html.replace(MARKER, f'<script>\n{calc}\n</script>', 1)
 
 
-def run_build(row_files):
-    """올린 원천 → 백업 bytes. pyxlsb 는 경로가 필요해 임시 폴더에 잠깐 쓴 뒤 지운다"""
+def run_build(files):
+    """올린 파일들 → 대시보드에 합칠 백업들(gzip bytes, 올린 순서).
+    원천(xlsb · csv · xlsx · zip)은 한 백업으로 만들고, 백업 파일(.json.gz)은 그대로 넘긴다.
+    pyxlsb 는 경로가 필요해 임시 폴더에 잠깐 쓴 뒤 지운다"""
     log = io.StringIO()
+    items, rows, row_pos, sources = [], [], None, []
     with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(log):
-        def save(f, k):
-            d = Path(tmp) / f'{k:02d}'                       # 올린 순서 유지 (같은 날짜는 뒤 파일이 이김)
+        for k, f in enumerate(files):
+            d = Path(tmp) / f'{k:02d}'                      # 올린 순서 유지 (같은 날짜는 뒤 파일이 이김)
             d.mkdir()
-            return bd.unpack_upload(Path(f.name).name, f, d)
-        rows = [p for k, f in enumerate(row_files) for p in save(f, k)]
-        payload = bd.build(rows, use_cache=False)
-    return bd.backup_bytes(payload), payload['source'], log.getvalue()
+            for p in bd.unpack_upload(Path(f.name).name, f, d):
+                if bd.is_backup(p):                         # 백업 파일 → 원천으로 읽지 않고 그대로 합치기
+                    payload = bd.read_backup(p)
+                    items.append(bd.backup_bytes(payload))
+                    sources.append(payload['source'].get('row', {}))
+                    print(f'[백업] {f.name}: {sources[-1].get("from")} ~ {sources[-1].get("to")} 그대로 합칩니다')
+                else:
+                    if row_pos is None:
+                        row_pos = len(items)
+                        items.append(None)
+                    rows.append(p)
+        if rows:
+            payload = bd.build(rows, use_cache=False)
+            items[row_pos] = bd.backup_bytes(payload)
+            sources.insert(row_pos, payload['source']['row'])
+    return items, sources, log.getvalue()
 
 
 with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 새 날짜만)', expanded=st.session_state.pop('just_built', False)):
@@ -65,14 +80,14 @@ with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 
                '올린 파일에 있는 날짜는 새 값으로 바뀌고, 나머지 날짜(예: 2024년)는 그대로 남습니다. '
                '데이터는 서버가 아니라 이 브라우저에만 저장됩니다 — 다른 PC에서 보려면 대시보드의 \'백업 내려받기\'로 옮기세요.')
     up_key = f"rows_{st.session_state.get('up_n', 0)}"     # 처리 후 키를 바꿔 올린 파일을 서버 메모리에서 비운다
-    row_files = st.file_uploader('로우 파일 (여러 개 가능 · 같은 날짜는 뒤 파일이 이김)', type=['xlsb', 'csv', 'xlsx', 'zip', 'gz'], accept_multiple_files=True, key=up_key)
+    row_files = st.file_uploader('로우 파일 또는 백업 파일(.json.gz) — 여러 개 가능 · 같은 날짜는 뒤 파일이 이김', type=['xlsb', 'csv', 'xlsx', 'zip', 'gz', 'json'], accept_multiple_files=True, key=up_key)
     if st.button('올리기', type='primary', disabled=not row_files):
         ok = False
         with st.spinner('읽는 중… 큰 파일은 몇 분 걸릴 수 있습니다'):
             try:
-                data, source, log = run_build(row_files)
-                st.session_state['built'] = {'data': data, 'source': source, 'log': log,
-                                             'id': hashlib.sha1(data).hexdigest()[:12]}
+                items, sources, log = run_build(row_files)
+                st.session_state['built'] = {'items': items, 'sources': sources, 'log': log,
+                                             'id': hashlib.sha1(b''.join(items)).hexdigest()[:12]}
                 ok = True
             except Exception as e:  # 원천 형식 오류를 화면에 보여 준다
                 st.session_state.pop('built', None)
@@ -85,8 +100,8 @@ with st.expander('📂 원천 파일 올리기 (처음 한 번 전체 · 이후 
             st.rerun()
     built = st.session_state.get('built')
     if built:
-        r = built['source']['row']
-        st.success(f"{r['from']} ~ {r['to']} ({r['days']}일)을 읽어 아래 대시보드의 저장된 데이터에 합쳤습니다")
+        rng = ' · '.join(f"{r.get('from')} ~ {r.get('to')} ({r.get('days')}일)" for r in built['sources'])
+        st.success(f"{rng}을 아래 대시보드의 저장된 데이터에 합쳤습니다")
         for line in built['log'].splitlines():      # 읽기 중 경고(없는 컬럼 · 깨진 글자 등)
             if line.strip().startswith('!'):
                 st.warning(line.strip().lstrip('! '))
@@ -98,7 +113,8 @@ html = page(stamp)
 built = st.session_state.get('built')
 if built:
     # 방금 올린 원천을 대시보드가 저장된 데이터에 합치도록 넣어 준다 (dashboard.html 의 preload())
-    pre = f"<script>window.AD_PRELOAD_ID = '{built['id']}'; window.AD_PRELOAD = '{base64.b64encode(built['data']).decode()}';</script>\n"
+    arr = ','.join(f"'{base64.b64encode(x).decode()}'" for x in built['items'])
+    pre = f"<script>window.AD_PRELOAD_ID = '{built['id']}'; window.AD_PRELOAD = [{arr}];</script>\n"
     html = html.replace('<script>\n', pre + '<script>\n', 1)
 if hasattr(st, 'iframe'):      # Streamlit 1.5x 이후 권장 API
     st.iframe(html, height=900)
