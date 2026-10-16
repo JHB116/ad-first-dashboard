@@ -29,6 +29,8 @@ st.markdown(
     header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{display: none !important;}}
     .block-container, [data-testid="stMainBlockContainer"] {{padding: 0 !important; max-width: 100% !important;}}
     [data-testid="stVerticalBlock"] {{gap: 0 !important;}}
+    .stApp, [data-testid="stAppViewContainer"] {{background: #eaf0f7;}}   /* 대시보드 배경과 같은 푸른 회색 — 첫구매 대시보드와 구분 */
+    @media (prefers-color-scheme: dark) {{ .stApp, [data-testid="stAppViewContainer"] {{background: #0b1119;}} }}
     [data-testid="stExpander"] {{margin: 6px 12px;}}
     iframe {{display: block; width: 100% !important; height: calc(100vh - {BAR_H}px) !important; height: calc(100dvh - {BAR_H}px) !important; border: 0;}}
     </style>""",
