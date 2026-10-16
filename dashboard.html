@@ -710,7 +710,7 @@ function renderTrend(main) {
     const v = periodVal(m, T, X.cur), c = periodVal(m, T, cmpAt), o = periodVal(m, T, othAt);
     const d1 = fmtD(v, c, m.lowerBetter), d2 = fmtD(v, o, m.lowerBetter);
     return `<div class="tile"><div class="t-l">${m.n}</div>
-      <div class="t-v">${C.fmt(m.kind, v)}${v != null ? `<small>${unitS(m)}</small>` : ''}</div>
+      <div class="t-v">${C.fmt(m.kind, v)}${v != null && m.kind !== 'ratio' ? `<small>${unitS(m)}</small>` : ''}</div>
       <div class="t-r"><span>${X.label}</span><b class="${d1.c}">${d1.t}</b></div>
       <div class="t-r"><span>${X.otherLabel}</span><b class="${d2.c}">${d2.t}</b></div>
       <div class="t-r"><span>${X.name}</span><span>${C.fmt(m.kind, c)}</span></div></div>`;
@@ -844,7 +844,7 @@ function yearChart(host, o) {
     show(Math.max(0, Math.min(n - 1, (cur < 0 ? Math.max(0, li) : cur) + (ev.key === 'ArrowLeft' ? -1 : 1))));
   });
 }
-const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
+const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', nrv: '순결제거래액(ROAS)', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
 // 원천에 컬럼이 없어 '데이터 없음'으로 둔 지표 · 기간
 function naNote() {
   const na = (P.source.row || {}).na || {};
@@ -858,7 +858,7 @@ function notesTrend() {
     <li>DA(페이먼츠): DA 중 매체 PAYCO·토스 + 채널 링크사(링크프라이스·다음제휴) / DA: 그 외 DA(포탈·SNS·생활밀착형앱)</li>
     <li>메시지: 광고유형 Message · PA: 광고유형 PA(상품피드) · 합계 = 선택한 유형의 합</li>
     <li>미분류(APP·viral·'-') 제외: ${(un.rows || 0).toLocaleString()}행 · 광고비 ${C.fmt('money', un.cost || 0)}백만원 · 가입 ${(un.join || 0).toLocaleString()}명 (전체 기간)</li>
-    <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액</li>
+    <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · <b>거래액 ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계)</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
     <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(연회색 실선) · 전전년(진회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
     <li>비교 '선택': 흐름 · 실적 표가 실적기간(파란 실선) vs 비교기간(진회색 점선)으로 바뀜 — 같은 순서의 날짜끼리(1일째 ↔ 1일째, 월별 · 주별 · 일별 버튼으로 묶음 단위 선택), 표 맨 앞 열 = 기간 전체</li>
@@ -878,7 +878,7 @@ function filterSummary() {
 // ════════════════════════════════════════════════════════════════════
 // 2. 광고 드릴다운
 // ════════════════════════════════════════════════════════════════════
-const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fps', 'fpr', 'nb', 'nrev'];
+const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fps', 'fpr', 'nb', 'nrev', 'roas'];
 function renderDrill(main) {
   const D = S.drill, ps = plist(), sh = shown(ps), at = sh[sh.length - 1];
   const X = cmpCtx(at), cmpIdx = X.prev;
@@ -951,7 +951,7 @@ function renderDrill(main) {
   const labels = sh.map(p => p.short), tips = sh.map(p => p.label), dd = sh.map(p => p.idx.length), marks = eventMarks(sh);
   const sec = $id('drSelSec');
   sec.innerHTML = `<div class="sec-h"><h2>선택 항목 추이 · ${esc(name)}</h2><span class="desc">${S.grain === 'month' ? '월별' : S.grain === 'week' ? '주별' : '일별'} ${S.mode === 'avg' ? '일평균' : '누계'} · 점선 = 전년 동기간</span></div><div class="charts c3" id="drCharts"></div>`;
-  const keys = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fpr', 'nb', 'nrev'];
+  const keys = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fpr', 'nb', 'nrev', 'roas'];
   $id('drCharts').innerHTML = keys.map(k => { const m = C.METRIC[k]; return `<div class="card cc"><div class="cc-t">${m.n}</div><div class="cc-s">${C.unit(m.kind, S.mode)}</div><div class="cc-b" id="drc-${k}"></div></div>`; }).join('');
   for (const k of keys) {
     const m = C.METRIC[k];

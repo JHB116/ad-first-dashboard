@@ -195,3 +195,17 @@ test('표기 규칙', () => {
   assert.equal(C.fmt('count', 1234.12), '1,234');
   assert.equal(C.fmt('count', 98.44), '98.4');
 });
+
+test('거래액 ROAS = 순결제거래액 합 ÷ 광고비 합 · 예전 백업(순결제거래액 없음)은 데이터 없음', () => {
+  const ts = C.daily(R, { group: 't' });
+  const tot = C.addSeries([...ts.values()], C.ROW_METS, R.dates.length);
+  const oct = C.periods(R, 'month').at(-1);
+  let nrv = 0, cost = 0;
+  for (let i = 0; i < R.n; i++) if (R.dates[R.f.d[i]].startsWith('2026-10')) { nrv += R.f.nrv[i]; cost += R.f.cost[i]; }
+  near(C.value(C.METRIC.roas, C.sumIdx(tot, oct.idx, C.METRIC.roas.base), 4, 'avg'), nrv / cost, 1e-9);
+  const old = JSON.parse(JSON.stringify(P.row)); delete old.f.nrv;
+  const R0 = C.prepare(old, C.ROW_METS);
+  const t0 = C.addSeries([...C.daily(R0, { group: 't' }).values()], C.ROW_METS, R0.dates.length);
+  assert.equal(C.value(C.METRIC.roas, C.sumIdx(t0, oct.idx, C.METRIC.roas.base), 4, 'avg'), null);
+  assert.ok(C.value(C.METRIC.cost, C.sumIdx(t0, oct.idx, ['cost']), 4, 'avg') > 0);
+});

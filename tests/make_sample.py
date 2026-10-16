@@ -35,7 +35,7 @@ ROW_SPEC = [
 ]
 METS = ['지표_광고비', '지표_UV(전체)', '지표_가입회원', '지표_총결제고객수(첫구매)', '지표_총결제거래액(첫구매)',
         '지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액',
-        '지표_총결제고객수', '지표_총결제거래액', '지표_총결제고객수(윈백)']
+        '지표_총결제고객수', '지표_총결제거래액', '지표_총결제고객수(윈백)', '지표_순결제거래액']
 COLS = ['Source.Name', '기간_월', '기간_일자', '구분_AF코드', '구분_광고유형', '구분_채널', '구분_매체명', '구분_비용출처',
         '구분_캠페인', '구분_하위캠페인', '구분_브랜드/기획전', '구분_디바이스', *METS]
 
@@ -54,7 +54,7 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
                 rows.append([source, f'{d.year}년{d.month:02d}월', serial, 'AF0', t, ch, md, src, camp, sub, bp, dev,
                              round(2_000_000 * scale), int(rng.poisson(2000 * scale)), int(rng.poisson(30 * scale)), fp,
                              fp * int(rng.integers(40_000, 90_000)), int(fp * .8), int(fp * .7), int(fp * .7) * 60_000,
-                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale))])
+                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale)), (fp + other) * 63_000])
         # 미분류 행 · 문자열 섞인 숫자 · 음수 조정분
         r = [source, '', serial, '-', 'APP', '-', '-', '-', '-', '-', '-', '-', *zeros]
         r[14] = ' - '

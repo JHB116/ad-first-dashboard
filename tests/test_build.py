@@ -48,7 +48,7 @@ def test_row_totals_match_raw(sample, payload):
     raw['t'] = bd.classify(raw)
     raw = raw[raw['t'].notna()]
     got = frame(payload['row'])
-    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv']:
+    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv', 'nrv']:
         assert np.allclose(raw.groupby('t')[m].sum().sort_index(), got.groupby('t')[m].sum().sort_index(), atol=0.5), m
     # 차원별 합도 보존 (브랜드/기획전 · 디바이스)
     for k in ['bp', 'dev', 'camp']:

@@ -7,7 +7,7 @@
 
   const TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA'];
   const TOTAL = '합계';
-  const ROW_METS = ['cost', 'uv', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb'];
+  const ROW_METS = ['cost', 'uv', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb', 'nrv'];
 
   // 화면 지표 — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
   const METRICS = [
@@ -19,6 +19,7 @@
     { k: 'fpr', n: '첫구매거래액', kind: 'money', base: ['fpr'], f: s => s.fpr },
     { k: 'nb', n: '신규고객수', kind: 'count', base: ['nb'], f: s => s.nb },
     { k: 'nrev', n: '신규거래액', kind: 'money', base: ['nrev'], f: s => s.nrev },
+    { k: 'roas', n: '거래액 ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },   // 순결제거래액 ÷ 광고비
   ];
   // 드릴다운 표에만 쓰는 보조 지표
   const EXTRA = [
@@ -73,13 +74,13 @@
     const n = sec.n != null ? sec.n : sec.f.d.length;
     const ds = {
       dates: sec.dates, dn: Int32Array.from(sec.dates.map(dnum)), n,
-      dims: sec.dims, dimKeys: Object.keys(sec.dims), mets: mets.filter(m => sec.f[m]),
+      dims: sec.dims, dimKeys: Object.keys(sec.dims), mets: mets.slice(),
       f: {}, byNum: new Map(),
     };
     ds.dates.forEach((d, i) => ds.byNum.set(ds.dn[i], i));
     ds.f.d = Int32Array.from(sec.f.d);
     for (const k of ds.dimKeys) ds.f[k] = Int32Array.from(sec.f[k]);
-    for (const m of ds.mets) ds.f[m] = Float64Array.from(sec.f[m]);
+    for (const m of ds.mets) ds.f[m] = sec.f[m] ? Float64Array.from(sec.f[m]) : new Float64Array(n);
     // 지표별 '데이터 없음' 날짜 (그 날짜 원천에 컬럼이 없었음) — 합계가 0 이 아니라 NaN 이 된다
     ds.na = {};
     for (const [m, list] of Object.entries(sec.na || {})) {
@@ -87,6 +88,8 @@
       for (const d of list) { const i = ds.byNum.get(dnum(d)); if (i != null) a[i] = 1; }
       ds.na[m] = a;
     }
+    // 백업에 지표 컬럼이 아예 없으면(예전 백업) 모든 날짜 '데이터 없음'
+    for (const m of ds.mets) if (!sec.f[m]) ds.na[m] = new Uint8Array(ds.dates.length).fill(1);
     return ds;
   }
 
