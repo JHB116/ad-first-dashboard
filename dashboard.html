@@ -8,7 +8,7 @@
 /* 색·레이아웃 토큰은 첫구매 실적 대시보드(ryunj/first-dashboard)와 같다 */
 :root{
   color-scheme:light;
-  --page:#eaf0f7; --surface:#fbfcfe; --surface-2:#e1e8f1; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --page:#ffffff; --surface:#ffffff; --surface-2:#eef0f3; --head:#e8f1fc; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
   --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --row-alt:rgba(11,11,11,.025);
   --prev:#b3b1a9; --y1:#5f5e5a; --y2:#a3a19a; --neg:#d03b3b; --pos:#006300; --wash:rgba(42,120,214,.07); --ev:#a05a00;
   /* 광고유형 고유색 — 필터로 유형을 빼도 색은 그대로 */
@@ -17,7 +17,7 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --page:#0b1119; --surface:#151c26; --surface-2:#202935; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --page:#111111; --surface:#1a1a1a; --surface-2:#262626; --head:#13233a; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --row-alt:rgba(255,255,255,.03);
     --prev:#6b6a64; --y1:#b9b8b0; --y2:#7d7c75; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
     --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
@@ -25,7 +25,7 @@
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --page:#0b1119; --surface:#151c26; --surface-2:#202935; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+  --page:#111111; --surface:#1a1a1a; --surface-2:#262626; --head:#13233a; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
   --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --row-alt:rgba(255,255,255,.03);
   --prev:#6b6a64; --y1:#b9b8b0; --y2:#7d7c75; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
   --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
@@ -38,7 +38,7 @@ button,select,input{font:inherit;color:inherit}
 .wrap{max-width:1480px;margin:0 auto;padding-inline:24px}
 @media (max-width:640px){.wrap{padding-inline:16px}header.top{position:static}.menu{margin-left:0;overflow-x:auto}}
 
-header.top{position:sticky;top:0;z-index:30;isolation:isolate;border-top:3px solid var(--c1);background:var(--page);background:color-mix(in srgb,var(--page) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+header.top{position:sticky;top:0;z-index:30;isolation:isolate;background:var(--head);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
 main.wrap{position:relative;z-index:0;padding-bottom:60px}
 .bar1{display:flex;align-items:center;gap:8px 28px;flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:10px;padding-block:12px}
@@ -59,6 +59,7 @@ main.wrap{position:relative;z-index:0;padding-bottom:60px}
 .filt-sum{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400;color:var(--muted);font-size:12px}
 #filtRows{border-top:1px dashed var(--grid);margin-top:2px}
 .seg{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:2px;flex-wrap:wrap}
+header.top .seg{background:color-mix(in srgb,var(--surface) 65%,transparent)}
 .seg button{border:0;background:transparent;padding:5px 13px;border-radius:6px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--border),0 1px 2px rgba(0,0,0,.06)}
 .field{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
@@ -448,7 +449,7 @@ function use(p) {
 }
 function showEmpty(extra = '') {
   $id('main').innerHTML = `<div class="drop-empty"><h2>광고 신규 실적 대시보드</h2>
-    <p>Streamlit 화면 맨 위 <b>📂 원천 파일 올리기</b>에서 로우 파일(xlsb · csv · xlsx)을 올리면 이 브라우저에 저장되고, 다음부터는 새 날짜 파일만 올리면 이어 붙습니다.</p>
+    <p>PC에서 원천 파일(xlsb · csv)을 <b>make_backup.bat</b> 아이콘에 끌어다 놓아 백업을 만든 뒤, 그 백업 파일을 이 화면에 끌어다 놓으세요. 이 브라우저에 저장되고 다음부터는 새 백업만 넣으면 날짜 단위로 이어 붙습니다.</p>
     <p class="hint">PC에서 <code>make_backup.bat</code>(또는 <code>python build_data.py</code>)으로 만든 백업(.json.gz)은 여기에 끌어다 놓거나 <b>백업 파일 열기</b>로 고르세요 — 저장된 데이터에 날짜 단위로 합쳐집니다. 데이터는 서버가 아니라 이 브라우저에만 저장됩니다.</p>${extra}
     <p><button class="btn" type="button" onclick="document.getElementById('fileOpen').click()">백업 파일 열기</button></p></div>`;
 }
@@ -744,7 +745,7 @@ function renderTrend(main) {
   const lg = keys.map((y, k) => `<button type="button" class="lgb" data-yh="${B - k}" aria-pressed="${!hid.has(B - k)}" title="눌러서 그래프에 보이기 · 숨기기">${keySvg(styles[k])}${esc(Y.custom ? `${yName(y)} ${y === 'c' ? rangeTxt(Y.cu.c0, Y.cu.c1) : rangeTxt(Y.cu.p0, Y.cu.p1)}` : yName(y))}</button>`).join('');
   const pick = split
     ? `<div class="seg" role="group" aria-label="지표">${C.METRICS.map(m => `<button data-set="trMetric" data-v="${m.k}" aria-pressed="${m === met}">${m.n}</button>`).join('')}</div>
-       <div class="seg" role="group" aria-label="세로 눈금"><button data-set="trScale" data-v="own" aria-pressed="${S.trScale !== 'same'}" title="그래프마다 눈금을 따로 — 모양(흐름) 비교">개별 눈금</button><button data-set="trScale" data-v="same" aria-pressed="${S.trScale === 'same'}" title="모든 그래프 눈금을 같게 — 크기 비교">같은 눈금</button></div>`
+       <div class="seg" role="group" aria-label="세로 눈금"><button data-set="trScale" data-v="own" aria-pressed="${S.trScale !== 'same'}" title="그래프마다 눈금을 따로 — 모양(흐름) 비교">개별 눈금</button><button data-set="trScale" data-v="same" aria-pressed="${S.trScale === 'same'}" title="광고유형 그래프끼리 눈금을 같게 — 크기 비교 (합계는 따로)">같은 눈금</button></div>`
     : `<label class="field">광고유형 <select id="trType">${[C.TOTAL, ...types].map(t => `<option value="${esc(t)}"${t === S.trType ? ' selected' : ''}>${esc(tName(t))}</option>`).join('')}</select></label>`;
   h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${Y.custom ? `실적기간 vs 비교기간을 같은 순서의 날짜끼리 (${Y.unitN}) · 숫자는 기간 전체` : (S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일') + ' · 음영 = 기준 기간'} · 세로 점선 = 쿠폰 정책 변경 · 오른쪽 연도를 눌러 켜고 끄기</span><div class="lg">${lg}</div></div>
     <div class="tr-pick">${pick}</div>
@@ -779,12 +780,12 @@ function renderTrend(main) {
   // 같은 눈금: 모든 카드의 값 범위를 합쳐 하나로
   let yr = null;
   if (split && S.trScale === 'same') {
-    const all = cards.flatMap(c => c.v.filter((_, j) => !hid.has(B - j)).flat()).map(v => C.scaled(met.kind, v)).filter(v => v != null && isFinite(v));
+    const all = cards.filter(c => c.t !== C.TOTAL).flatMap(c => c.v.filter((_, j) => !hid.has(B - j)).flat()).map(v => C.scaled(met.kind, v)).filter(v => v != null && isFinite(v));
     if (all.length) yr = [Math.min(...all), Math.max(...all)];
   }
   const labels = slots.map(s => s.label);
   cards.forEach((c, k) => yearChart($id('trc-' + k), {
-    m: c.m, labels, focus, marks: Y.marks, yr, unit: unitS(c.m), cmps,
+    m: c.m, labels, focus, marks: Y.marks, yr: c.t === C.TOTAL ? null : yr, unit: unitS(c.m), cmps,
     lines: keys.map((y, j) => ({ name: yName(y), ...styles[j], off: hid.has(B - j), vals: c.v[j], tips: slots.map(s => s.tips[y]) })),
   }));
 

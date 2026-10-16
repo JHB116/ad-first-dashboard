@@ -16,18 +16,9 @@ LF몰 **광고유형별 신규(가입)·첫구매 실적**을 깊게 보는 대�
 
 ## 데이터 올리기 · 갱신
 
-대시보드는 올린 데이터를 **이 브라우저에 기억**하고, 새로 넣는 데이터를 **날짜 단위로 합친다**(새 데이터에 있는 날짜는 교체, 나머지 날짜는 그대로). 원천을 넣는 방법은 두 가지이고 결과는 같다.
+대시보드는 넣은 백업을 **이 브라우저에 기억**하고, 새로 넣는 백업을 **날짜 단위로 합친다**(새 백업에 있는 날짜는 교체, 나머지 날짜는 그대로). 원천(xlsb · csv)은 PC에서 `make_backup.bat` 으로 백업을 만들어 넣는다 — 서버에는 아무것도 올리지 않는다.
 
-### 0. PC에서 대시보드 띄우기 (큰 파일을 직접 넣을 때 가장 간단)
-
-`run_dashboard.bat` 더블클릭 → 필요한 패키지를 설치하고 브라우저에 `http://localhost:8501` 로 대시보드가 열린다(창을 닫으면 종료). 이 대시보드의 **📂 원천 파일 올리기**는 PC 메모리를 쓰므로 284MB csv · 186MB xlsb도 그대로 올릴 수 있다.
-
-- 처음 한 번 2024년 csv를 올리고, 매일 2025-26 xlsb를 올린다.
-- 저장된 데이터는 이 주소(localhost)의 브라우저에만 남는다 — 클라우드 주소의 데이터와는 따로다. 옮기려면 **백업 내려받기** → 다른 쪽에서 **백업 파일 열기**.
-
-### A. PC에서 백업 만들어 끌어다 놓기 (큰 파일 · 매일 갱신 권장)
-
-Streamlit 무료 서버는 메모리가 넉넉하지 않아 100MB 넘는 원천을 매일 올리기엔 불안하다. PC에서 처리하면 크기 제한이 없다.
+### PC에서 백업 만들어 끌어다 놓기
 
 **처음 한 번 (2024년)**
 1. 이 저장소를 내려받는다(GitHub → Code → Download ZIP → 압축 풀기, 또는 `git clone`).
@@ -41,13 +32,6 @@ Streamlit 무료 서버는 메모리가 넉넉하지 않아 100MB 넘는 원천�
 
 - 2024년 csv는 처음 한 번만 읽고 결과를 `data\cache` 에 저장해 두므로, 매일은 2025-26 xlsb만 새로 읽는다.
 - 직접 실행: `python build_data.py`(raw 폴더 전부) · `python build_data.py --row a.xlsb b.csv`
-
-### B. Streamlit 화면에서 원천 올리기 (작은 파일)
-
-대시보드 맨 위 **📂 원천 파일 올리기** → 로우 파일(xlsb · csv · xlsx · zip · gz) → **올리기**.
-
-- 한 번에 한 파일씩 올린다. 큰 csv는 zip으로 압축하면 서버 메모리를 훨씬 덜 쓴다(111MB csv 기준 서버 최대 약 750MB → zip 약 530MB). 100MB 넘는 파일을 그대로 올리면 앱이 죽을 수 있다("Oh no. Error running app" — 앱 오른쪽 아래 Manage app → Reboot).
-- 올린 원천은 서버에 저장하지 않는다(임시 폴더에서 읽고 바로 지움).
 
 ### 공통
 
@@ -78,9 +62,8 @@ Streamlit Cloud → New app → 이 저장소 · Branch `main` · **Main file pa
 | `dashboard.html` | 화면 · 상태 · 차트 · 표 |
 | `calc.js` | 공식 산식(기간 · 일평균 · CPA · 비교 기간 · 드릴다운 트리 · 베이스라인 · 구성 효과 분해). 화면과 테스트가 함께 쓴다 |
 | `build_data.py` | 원천 → 백업, 광고유형 분류, 이어 붙이기 |
-| `run_dashboard.bat` | PC(윈도우)에서 더블클릭 — 대시보드를 내 PC에서 띄움(업로드 메모리 제한 없음) |
 | `make_backup.bat` | PC(윈도우)에서 더블클릭 — `raw` 폴더 원천으로 백업 만들기 |
-| `app.py` | Streamlit: 원천 업로드 → 백업, `dashboard.html` + `calc.js` 표시 |
+| `app.py` | Streamlit: `dashboard.html` + `calc.js` 를 화면 가득 표시 (업로드 없음) |
 | `tests/` | `make_sample.py`(가짜 원천, 임의값) · `test_build.py` · `test_calc.mjs` · `test_real_numbers.py`(실데이터 + 로컬 기대값이 있을 때만) |
 | `docs/METRICS.md` | 지표 · 분류 · 기간 정의, 분석 원칙 |
 | `docs/HANDOFF.md` | 배경 · 분석 맥락 · 다음 과제 |
