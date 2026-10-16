@@ -291,7 +291,6 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
       <nav class="menu" aria-label="화면">
         <button data-page="trend">추이</button>
         <button data-page="drill">드릴다운</button>
-        <button data-page="da">DA 가입 분해</button>
         <button data-page="diag">첫구매 진단</button>
       </nav>
       <div class="bk-tools">
@@ -370,7 +369,6 @@ const DEF = {
   page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 3, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'default' },
-  da: { metric: 'join', media: null, kakao: true },
   diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
 };
 let S = load();
@@ -1258,60 +1256,7 @@ function renderDrill(main) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 3. DA 가입 분해 (테스트 캠페인 포함/제외)
-// ════════════════════════════════════════════════════════════════════
-const DA_METS = ['join', 'fp', 'cost', 'jcpa', 'fcpa', 'fpj'];
-function daMedia() { const set = new Set(); const ti = R.dims.t.indexOf('DA'); for (let i = 0; i < R.n; i++) if (R.f.t[i] === ti) set.add(R.dims.md[R.f.md[i]]); return [...set]; }
-function renderDA(main) {
-  const D = S.da, ps = plist(), sh = shown(ps), at = sh[sh.length - 1];
-  if (!R.dims.t.includes('DA')) { main.innerHTML = '<div class="card pad" style="margin-top:24px">DA 데이터가 없습니다.</div>'; return; }
-  const media = cache.daMedia || (cache.daMedia = daMedia());
-  if (!D.media) D.media = media.filter(m => /^(FB|IG|FB\/IG|META|메타|페이스북|인스타)/i.test(m));
-  const testMd = new Set(D.media);
-  const ti = R.dims.t.indexOf('DA'), kakao = R.dims.md.indexOf('카카오'), newSrc = R.dims.src.indexOf('신규고객확대');
-  const isTest = i => testMd.has(R.dims.md[R.f.md[i]]) || (D.kakao && R.f.md[i] === kakao && R.f.src[i] === newSrc);
-  const g = C.daily(R, { where: { t: new Set(['DA']) }, group: i => isTest(i) ? 'test' : 'rest' });
-  const nd = R.dates.length, test = g.get('test') || C.addSeries([], C.ROW_METS, nd), rest = g.get('rest') || C.addSeries([], C.ROW_METS, nd);
-  const all = C.addSeries([test, rest], C.ROW_METS, nd);
-  const m = C.METRIC[D.metric] || C.METRIC.join;
-  const labels = sh.map(p => p.short), tips = sh.map(p => p.label), dd = sh.map(p => p.idx.length);
-  const lines = [['DA 전체', '--ink', all, 3], ['테스트 캠페인', '--c4', test, 2], ['테스트 제외', '--c1', rest, 2]];
-  const vals = lines.map(([, , s]) => sh.map(p => periodVal(m, s, p.idx)));
-
-  let h = `<section><div class="sec-h"><h2>DA 가입 분해 · 테스트 캠페인 포함/제외</h2><span class="desc">일보고서 로우 · 유형 DA(페이먼츠 제외) · 비용출처 필터 미적용</span></div>
-    <div class="card pad"><div class="bar2" style="padding:0">
-      <div class="seg" role="group" aria-label="지표">${DA_METS.map(k => `<button data-dam="${k}" aria-pressed="${D.metric === k}">${C.METRIC[k].n}</button>`).join('')}</div>
-      <label class="field"><input type="checkbox" id="daKakao"${D.kakao ? ' checked' : ''}> 카카오 &amp; 비용출처 '신규고객확대' 포함</label>
-    </div><div class="bar2" style="padding:6px 0 0"><span class="flabel">테스트 매체</span><div class="chips">${media.map(x => `<button class="chip" data-damd="${esc(x)}" aria-pressed="${testMd.has(x)}"><i></i>${esc(x)}</button>`).join('')}</div></div></div></section>
-    <section><div class="card cc big"><div class="legend">${lines.map(([n, c], k) => `<span class="chip" aria-pressed="true" style="--sw:var(${c})"><i></i>${n} <span class="cv">${C.fmt(m.kind, vals[k][vals[k].length - 1])}</span></span>`).join('')}</div><div class="cc-b" id="daChart"></div></div></section>
-    <details class="tbl" open><summary>${m.n} 기간별 표</summary><div class="card tbl-wrap"><table class="grid" id="daTbl"></table></div></details>
-    <section><div class="sec-h"><h2>테스트 캠페인 상세</h2><span class="desc">기간 중 한 번이라도 일평균 가입 0.5명 이상 · 가입 일평균, 마지막 열은 ${esc(at.short)} 기준</span><div class="tools"><button class="btn" data-csv-for="daCamp" data-name="DA_테스트캠페인">CSV</button></div></div><div class="card tbl-wrap"><table class="grid" id="daCamp"></table></div></section>
-    <section style="margin-top:12px"><div class="card pad"><ul class="notes">
-      <li>테스트 캠페인 = DA 중 선택한 테스트 매체(기본 FB/IG 전체) + 카카오 &amp; 비용출처 '신규고객확대'</li>
-      <li>7~8월 DA 가입 증가는 Meta 신규·방문유저 증액(7월)과 카카오 '슈즈B급행사'(8월, 첫구매/가입 매우 낮음) 영향 — 제외하면 DA 도 하락 (claude.ai 분석 결과)</li>
-      <li>이벤트성 스파이크(테스트 캠페인)는 분리해서 본다 · 신규고객확대 목적은 가입CPA·첫구매CPA 가 1차 지표</li></ul></div></section>`;
-  main.innerHTML = h;
-  lineChart($id('daChart'), { labels, tips, days: dd, kind: m.kind, unit: C.unit(m.kind, S.mode), h: 300, marks: eventMarks(sh), label: `DA ${m.n} 분해`,
-    series: lines.map(([n, c, , w], k) => ({ name: n, color: c, values: vals[k], width: w })) });
-  $id('daTbl').innerHTML = `<thead><tr><th>구분</th>${sh.map((p, i) => `<th class="${i === sh.length - 1 ? 'cur' : ''}">${esc(p.short)}</th>`).join('')}</tr></thead><tbody>${lines.map(([n], k) => `<tr class="${k === 0 ? 'tot' : ''}"><td>${n}</td>${vals[k].map((v, i) => `<td class="${i === sh.length - 1 ? 'cur' : ''}">${C.fmt(m.kind, v, { fixed: 1 })}</td>`).join('')}</tr>`).join('')}</tbody>`;
-
-  // 테스트 캠페인 상세 — 최근 6개 기간
-  const recent = sh.slice(-6);
-  const groups = C.daily(R, { where: { t: new Set(['DA']) }, group: i => isTest(i) ? `${R.f.md[i]}|${R.f.src[i]}|${R.f.camp[i]}` : null });
-  const J = C.METRIC.join, rowsHtml = [];
-  for (const [key, s] of groups) {
-    const js = recent.map(p => C.value(J, C.sumIdx(s, p.idx, ['join']), p.idx.length, 'avg'));
-    if (!js.some(v => v != null && v >= 0.5)) continue;
-    const [mdI, srcI, campI] = key.split('|').map(Number);
-    const atS = C.sumIdx(s, at.idx, C.ROW_METS);
-    rowsHtml.push({ js, sort: Math.max(...js.map(v => v || 0)), html: `<td title="${esc(R.dims.camp[campI])}">${esc(R.dims.camp[campI])}</td><td>${esc(R.dims.md[mdI])}</td><td>${esc(R.dims.src[srcI])}</td>${js.map((v, i) => `<td class="${i === js.length - 1 ? 'cur' : ''}">${C.fmt('count', v, { dp: 1 })}</td>`).join('')}<td class="bl">${C.fmt('ratio', C.div(atS.fp, atS.join), { dp: 1 })}</td><td>${C.fmt('money', atS.cost / Math.max(1, at.idx.length), { fixed: 1 })}</td><td>${C.fmt('cpa', C.div(atS.cost, atS.join))}</td>` });
-  }
-  rowsHtml.sort((a, b) => b.sort - a.sort);
-  $id('daCamp').innerHTML = `<thead><tr><th>캠페인</th><th>매체</th><th>비용출처</th>${recent.map((p, i) => `<th class="${i === recent.length - 1 ? 'cur' : ''}">${esc(p.short)}<span class="sub">가입/일</span></th>`).join('')}<th class="bl">첫구매/가입</th><th>광고비<span class="sub">백만원/일</span></th><th>가입CPA<span class="sub">만원</span></th></tr></thead><tbody>${rowsHtml.map(r => `<tr>${r.html}</tr>`).join('') || `<tr><td colspan="${recent.length + 6}" class="hint">조건에 맞는 테스트 캠페인이 없습니다</td></tr>`}</tbody>`;
-}
-
-// ════════════════════════════════════════════════════════════════════
-// 4. 첫구매 진단 (로우 기준 — 구매고객 · 첫구매 · 비중 · UV · 전환율)
+// 3. 첫구매 진단 (로우 기준 — 구매고객 · 첫구매 · 비중 · UV · 전환율)
 // ════════════════════════════════════════════════════════════════════
 const DIAG_DIMS = ['t', 'ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev'];
 function dgValid() { return null; }   // 모든 날짜 사용
@@ -1573,7 +1518,7 @@ function syncBar() {
   }
 }
 let scrollKeep = null;
-const PAGES = { trend: renderTrend, drill: renderDrill, da: renderDA, diag: renderDiag };
+const PAGES = { trend: renderTrend, drill: renderDrill, diag: renderDiag };
 function render(keepScroll) {
   if (!P) return showEmpty();
   if (!PAGES[S.page]) S.page = 'trend';
@@ -1612,8 +1557,6 @@ document.addEventListener('click', e => {
   if (ds.tw != null) { const o = new Set(S.drill.open); o.has(ds.tw) ? o.delete(ds.tw) : o.add(ds.tw); S.drill.open = [...o]; render(true); return; }
   if (ds.sel != null) { S.drill.sel = ds.sel; render(true); const s = $id('drSelSec'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
-  if (ds.dam) { S.da.metric = ds.dam; render(true); return; }
-  if (ds.damd != null) { const s = new Set(S.da.media || []); s.has(ds.damd) ? s.delete(ds.damd) : s.add(ds.damd); S.da.media = [...s]; render(true); return; }
   if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
   if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }
   if (t.id === 'cuReset') { S.custom = { c0: '', c1: '', p0: '', p1: '' }; render(true); return; }
@@ -1630,7 +1573,6 @@ document.addEventListener('change', e => {
   else if (t.dataset.dim != null) { const L = +t.dataset.dim, d = S.drill.dims.slice(); if (t.value) d[L] = t.value; else d.length = L; S.drill.dims = d.filter((x, i) => x && d.indexOf(x) === i); S.drill.open = []; S.drill.sel = ''; render(true); }
   else if (t.id === 'drSmall') { S.drill.hideSmall = t.checked; render(true); }
   else if (t.id === 'drSort') { S.drill.sort = t.value; render(true); }
-  else if (t.id === 'daKakao') { S.da.kakao = t.checked; render(true); }
   else if (['dgB0', 'dgB1', 'dgR0', 'dgR1'].includes(t.id)) { if (t.value) { S.diag[t.id.slice(2).toLowerCase()] = t.value; render(true); } }
   else if (t.id === 'dgRefY') { S.diag.refY = +t.value; render(true); }
   else if (t.dataset.dgdim != null) { const L = +t.dataset.dgdim, d = S.diag.dims.slice(); if (t.value) d[L] = t.value; else d.length = L; S.diag.dims = d.filter((x, i) => x && d.indexOf(x) === i); S.diag.open = []; render(true); }
