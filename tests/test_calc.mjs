@@ -123,11 +123,11 @@ open(d/'b.json', 'w', encoding='utf-8').write(bd.to_json(p))`;
   const tot = C.daily(R2).get('_');
   const ps = C.periods(R2, 'month');
   const m24 = ps.find(p => p.key === '2024-09'), m25 = ps.find(p => p.key === '2025-09');
-  // 2024: 신규구매자 없음, 첫구매 · 구매고객은 있음
+  // 2024: 신규고객수 없음, 첫구매 · 구매고객은 있음
   assert.equal(C.value(C.METRIC.nb, C.sumIdx(tot, m24.idx, ['nb']), m24.idx.length, 'avg'), null);
   assert.ok(C.value(C.METRIC.fp, C.sumIdx(tot, m24.idx, ['fp']), m24.idx.length, 'avg') > 0);
   assert.ok(C.value(C.METRIC.fps, C.sumIdx(tot, m24.idx, ['fp', 'buy']), m24.idx.length, 'avg') > 0);
-  // 2025 신규구매자의 전년비는 계산하지 않는다 (-100% 가 아니라 –)
+  // 2025 신규고객수의 전년비는 계산하지 않는다 (-100% 가 아니라 –)
   const v25 = C.value(C.METRIC.nb, C.sumIdx(tot, m25.idx, ['nb']), m25.idx.length, 'avg');
   const yoy = C.compareIdx(R2, m25, 'month', 'yoy');
   assert.ok(v25 > 0);

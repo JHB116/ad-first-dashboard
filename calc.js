@@ -17,7 +17,7 @@
     { k: 'fp', n: '첫구매', kind: 'count', base: ['fp'], f: s => s.fp },
     { k: 'fcpa', n: '첫구매CPA', kind: 'cpa', base: ['cost', 'fp'], f: s => div(s.cost, s.fp), lowerBetter: true },
     { k: 'fpr', n: '첫구매거래액', kind: 'money', base: ['fpr'], f: s => s.fpr },
-    { k: 'nb', n: '신규구매자', kind: 'count', base: ['nb'], f: s => s.nb },
+    { k: 'nb', n: '신규고객수', kind: 'count', base: ['nb'], f: s => s.nb },
     { k: 'nrev', n: '신규거래액', kind: 'money', base: ['nrev'], f: s => s.nrev },
   ];
   // 드릴다운 표에만 쓰는 보조 지표
