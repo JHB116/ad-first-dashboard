@@ -758,11 +758,12 @@ function renderTrend(main) {
         <div class="cc-b tr-b" id="trc-${k}"></div></div>`;
     }).join('')}</div></section>`;
 
+  h += memoSection();   // 메모 — 그래프 바로 아래
   h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 실적 (${modeN})</h2><span class="desc">${esc(split ? met.n + ' · 합계 + 광고유형' : tName(S.trType))} · ${Y.custom ? `실적기간 ${esc(rangeTxt(Y.cu.c0, Y.cu.c1))} vs 비교기간 ${esc(rangeTxt(Y.cu.p0, Y.cu.p1))} · 맨 앞 열 = 기간 전체` : `${keys.map(yName).join(' · ')} · 전년비 = ${yName(keys[2])} vs ${yName(keys[1])} · 전전년비 = ${yName(keys[2])} vs ${yName(keys[0])}`} · 증가 +, 감소 △</span>
     <div class="tools"><div class="seg" role="group" aria-label="표 형태"><button data-set="layout" data-v="block" aria-pressed="${S.layout === 'block'}">엑셀형</button><button data-set="layout" data-v="stack" aria-pressed="${S.layout !== 'block'}">연도별 행</button></div>
     <button class="btn" data-csv-for="trTbl" data-name="추이_${grainN}">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid tg" id="trTbl"></table></div></section>`;
-  h += memoSection() + notesTrend();
+  h += notesTrend();
   main.innerHTML = h;
   renderMemos();
 
@@ -1346,9 +1347,6 @@ function renderDiag(main) {
       <div class="l3">&gt; ${shareBad ? `첫구매 비중 ${rows.share.exp != null ? '기대치 대비' : '베이스라인 대비'} 하락 → 악화로 판정.` + ' 아래 구성 효과(브랜드/기획전 · 캠페인 · 디바이스) 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : '첫구매 비중 하락 없음 — 드릴다운에서 기대치 대비 낮은 항목 확인'}${uvP != null && crP != null ? (Math.abs(crP) > Math.abs(uvP) ? ' · 첫구매 변화는 전환율 쪽이 더 큼' : ' · 첫구매 변화는 유입(UV) 쪽이 더 큼') : ''}</div>
       <div class="hint">계절 기대치 = 베이스라인 × (비교 연도 같은 날짜 구간의 최근 ÷ 베이스라인). 요일 보정 = 베이스라인을 평일 / 주말·휴일 평균으로 나눠 최근 구간의 요일 구성으로 다시 가중(비교 연도도 같은 방식).</div></div></section>`;
 
-  h += `<section><div class="sec-h"><h2>${esc(F.refY)}년 vs ${rg.curY}년 월별 · ${esc(filt)}</h2><span class="desc">월 일평균 · 진행 중인 월은 두 해 모두 같은 일자(1일~N일)까지</span><div class="tools"><button class="btn" data-csv-for="dgMon" data-name="첫구매진단_월별_${F.refY}_${rg.curY}">CSV</button></div></div>
-    <div class="row2"><div class="card cc"><div class="cc-t">첫구매 일평균</div><div class="cc-b" id="dgMonFp"></div></div><div class="card cc"><div class="cc-t">첫구매 비중 (첫구매 ÷ 구매고객)</div><div class="cc-b" id="dgMonSh"></div></div></div>
-    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgMon"></table></div></section>`;
 
   const avail = DIAG_DIMS.filter(k => R.dims[k]);
   F.dims = F.dims.filter(d => avail.includes(d));
@@ -1379,37 +1377,8 @@ function renderDiag(main) {
       <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
   main.innerHTML = h;
 
-  renderDgMonthly(rg, series);
   renderDgTree(rg);
   renderDgComp(rg);
-}
-function renderDgMonthly(rg, s) {
-  const F = S.diag, DT = dgDates(), curY = rg.curY, valid = rg.valid;
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const lastOk = dgLastOk(), lastY = +lastOk.slice(0, 4), lastM = +lastOk.slice(5, 7), lastD = +lastOk.slice(8, 10);
-  const partialM = lastY === curY && lastD < C.monthDays(lastY, lastM) ? lastM : 0;
-  const mv = y => months.map(m => {
-    const end = m === partialM ? Math.min(lastD, C.monthDays(y, m)) : C.monthDays(y, m);
-    const mm = String(m).padStart(2, '0');
-    const idx = C.rangeIdx(R, `${y}-${mm}-01`, `${y}-${mm}-${String(end).padStart(2, '0')}`, valid), o = C.avgOf(s, idx, ['buy', 'fp', 'uv']);
-    return { days: idx.length, buy: o.buy, fp: o.fp, sh: C.div(o.fp, o.buy), cr: C.div(o.fp, o.uv) };
-  });
-  const ry = mv(F.refY), cy = mv(curY);
-  const labels = months.map(m => m + '월');
-  lineChart($id('dgMonFp'), { labels, kind: 'count', unit: '명/일', h: 200, label: '첫구매 일평균 연도 비교',
-    series: [{ name: `${F.refY}년`, color: '--prev', values: ry.map(r => r.days ? r.fp : null) }, { name: `${curY}년`, color: '--c1', values: cy.map(r => r.days ? r.fp : null) }] });
-  lineChart($id('dgMonSh'), { labels, kind: 'ratio', unit: '%', h: 200, label: '첫구매 비중 연도 비교',
-    series: [{ name: `${F.refY}년`, color: '--prev', values: ry.map(r => r.days ? r.sh : null) }, { name: `${curY}년`, color: '--c1', values: cy.map(r => r.days ? r.sh : null) }] });
-  const td = (v, k) => `<td>${v == null ? '–' : (k ? dgFmt('ratio', v) : C.fmtNum(v, 1))}</td>`;
-  const dd = (b, a) => { const p = C.pct(b, a); return `<td class="${clsP(p)}">${sgn(p)}</td>`; };
-  $id('dgMon').innerHTML = `<thead><tr><th>월</th><th class="grp" colspan="5">${F.refY}년</th><th class="grp" colspan="5">${curY}년</th><th class="grp" colspan="3">${curY} vs ${F.refY}</th></tr>
-    <tr><th></th><th>일수</th><th>구매고객</th><th>첫구매</th><th>비중</th><th>전환율</th><th class="bl">일수</th><th>구매고객</th><th>첫구매</th><th>비중</th><th>전환율</th><th class="bl">구매고객</th><th>첫구매</th><th>비중</th></tr></thead><tbody>${months.map((m, i) => {
-      const a = ry[i], b = cy[i];
-      if (!a.days && !b.days) return '';
-      const A_ = a.days ? a : {}, B_ = b.days ? b : {};
-      return `<tr><td>${m}월</td><td>${a.days || '–'}</td>${td(A_.buy)}${td(A_.fp)}${td(A_.sh, 1)}${td(A_.cr, 1)}<td class="bl">${b.days || '–'}</td>${td(B_.buy)}${td(B_.fp)}${td(B_.sh, 1)}${td(B_.cr, 1)}
-        ${a.days && b.days ? `${dd(b.buy, a.buy).replace('<td class="', '<td class="bl ')}${dd(b.fp, a.fp)}${dd(b.sh, a.sh)}` : '<td class="bl">–</td><td>–</td><td>–</td>'}</tr>`;
-    }).join('')}</tbody>`;
 }
 function renderDgTree(rg) {
   const F = S.diag, dims = F.dims;
