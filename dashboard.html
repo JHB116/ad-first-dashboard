@@ -224,6 +224,7 @@ table.tg th small.u{display:inline;margin-left:6px;font-weight:400;color:var(--m
 table.tg th .ky{margin-right:6px}
 table.tg tr.r-yoy th.yl{color:var(--muted);font-weight:400;padding-left:32px}
 table.tg tr.r-y1 td,table.tg tr.r-y1 th{border-bottom-color:transparent}
+table.tg tr.r-last td,table.tg tr.r-last th{border-bottom-color:var(--grid)!important}
 table.tg tr.r-prev th.stick{color:var(--ink-2);font-weight:400}
 
 /* 메모 (첫구매 실적 대시보드와 같은 모양) */
@@ -793,7 +794,9 @@ function renderTrend(main) {
   const tcols = Y.custom ? [{ label: '기간 전체', sub: '', all: true }, ...slots] : slots;
   const tv = c => Y.custom ? c.v.map((a, j) => [c.tot[j], ...a]) : c.v;
   const tf = Y.custom ? 0 : focus;   // 강조 열
-  const block = S.layout === 'block', n = tcols.length, order = keys.map((_, j) => B - j);   // 최신 계열부터
+  // 그래프에서 숨긴 연도(범례)는 표에서도 뺀다 — 그 연도와의 비교 행도 함께. 기준 연도를 숨기면 비교 행은 모두 뺀다
+  const block = S.layout === 'block', n = tcols.length, order = keys.map((_, j) => B - j).filter(j => !hid.has(B - j));   // 최신 계열부터
+  const tcmps = hid.has(0) ? [] : cmps.filter(q => !hid.has(B - q.j));
   const head = (s, k, extra = '') => `<th class="p${k === tf ? ' now' : ''}${extra}">${esc(s.label)}${s.sub ? `<small>${esc(s.sub)}</small>` : ''}</th>`;
   const cell = (t, k, cls = '') => `<td class="${[cls, k === tf ? 'now' : ''].filter(Boolean).join(' ')}">${t}</td>`;
   const f = (m, v) => C.fmt(m.kind, v, { fixed: 1 });
@@ -801,21 +804,21 @@ function renderTrend(main) {
   const gName = c => split ? `<i class="sw" style="background:${trendColor(c.t)}"></i>${esc(tName(c.t))}` : esc(c.m.n);
   let t = '<thead>';
   if (block) {
-    t += `<tr><th class="stick s1" rowspan="2">구분</th>${order.map((j, b) => `<th class="band${b ? ' bk' : ''}" colspan="${n}">${esc(yName(keys[j]))}</th>`).join('')}${cmps.map(q => `<th class="band bk" colspan="${n}">${q.label}</th>`).join('')}</tr>`;
-    t += `<tr class="h2">${[...order.map((_, b) => b), ...cmps.map(() => -1)].map(b => tcols.map((s, k) => head(s, b <= 0 ? k : -9, k === 0 && b !== 0 ? ' bk' : '')).join('')).join('')}</tr></thead><tbody>`;
+    t += `<tr><th class="stick s1" rowspan="2">구분</th>${order.map((j, b) => `<th class="band${b ? ' bk' : ''}" colspan="${n}">${esc(yName(keys[j]))}</th>`).join('')}${tcmps.map(q => `<th class="band bk" colspan="${n}">${q.label}</th>`).join('')}</tr>`;
+    t += `<tr class="h2">${[...order.map((_, b) => b), ...tcmps.map(() => -1)].map(b => tcols.map((s, k) => head(s, b <= 0 ? k : -9, k === 0 && b !== 0 ? ' bk' : '')).join('')).join('')}</tr></thead><tbody>`;
     for (const c of cards) {
       const V = tv(c);
       t += `<tr class="${c.t === C.TOTAL && split ? 'top' : 'ch'}"><th class="stick s1">${gName(c)}<small class="u">${unitS(c.m)}</small></th>`
         + order.map((j, b) => V[j].map((v, k) => cell(f(c.m, v), b ? -9 : k, (b ? 'pv' : '') + (k === 0 && b ? ' bk' : ''))).join('')).join('')
-        + cmps.map(q => V[B].map((v, k) => dCell(c, V, k, q.j, k === 0 ? 'bk' : '')).join('')).join('') + '</tr>';
+        + tcmps.map(q => V[B].map((v, k) => dCell(c, V, k, q.j, k === 0 ? 'bk' : '')).join('')).join('') + '</tr>';
     }
   } else {
     t += `<tr><th class="stick s1">구분</th>${tcols.map((s, k) => head(s, k)).join('')}</tr></thead><tbody>`;
     for (const c of cards) {
       const V = tv(c);
       t += `<tr class="grp"><th class="stick s1">${gName(c)}<small>${unitS(c.m)}</small></th><td colspan="${n}"></td></tr>`;
-      order.forEach((j, b) => { t += `<tr class="${b ? 'r-prev' : 'r-cur'}"><th class="stick s1">${keySvg(styles[j])}${esc(yName(keys[j]))}</th>${V[j].map((v, k) => cell(f(c.m, v), k, b ? 'pv' : '')).join('')}</tr>`; });
-      cmps.forEach((q, i) => { t += `<tr class="r-yoy${i < cmps.length - 1 ? ' r-y1' : ''}"><th class="stick s1 yl">${q.label}</th>${V[B].map((v, k) => dCell(c, V, k, q.j)).join('')}</tr>`; });
+      order.forEach((j, b) => { t += `<tr class="${b ? 'r-prev' : 'r-cur'}${!tcmps.length && b === order.length - 1 ? ' r-last' : ''}"><th class="stick s1">${keySvg(styles[j])}${esc(yName(keys[j]))}</th>${V[j].map((v, k) => cell(f(c.m, v), k, b ? 'pv' : '')).join('')}</tr>`; });
+      tcmps.forEach((q, i) => { t += `<tr class="r-yoy${i < tcmps.length - 1 ? ' r-y1' : ''}"><th class="stick s1 yl">${q.label}</th>${V[B].map((v, k) => dCell(c, V, k, q.j)).join('')}</tr>`; });
     }
   }
   const tbl = $id('trTbl');
