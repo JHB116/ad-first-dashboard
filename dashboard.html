@@ -593,23 +593,30 @@ const YEAR_STYLE = [  // [y0-2, y0-1, y0]
   { color: 'var(--c1)', dash: '', w: 2.4 },
 ];
 const CUSTOM_STYLE = [{ color: 'var(--y2)', dash: '5 3', w: 2 }, { color: 'var(--c1)', dash: '', w: 2.4 }];
-// '선택' 비교: 실적기간 k번째 날 ↔ 비교기간 k번째 날. 120일이 넘으면 7일씩 묶는다
+// '선택' 비교: 실적기간 k번째 날 ↔ 비교기간 k번째 날. 월별 = 실적기간의 달력 월로, 주별 = 7일씩, 일별 = 하루씩 묶는다
 function customSlots(at) {
   const cu = customRange(at), d = x => C.dnum(x);
-  const nc = d(cu.c1) - d(cu.c0) + 1, np = d(cu.p1) - d(cu.p0) + 1, n = Math.max(nc, np), bk = n > 120 ? 7 : 1;
+  const nc = d(cu.c1) - d(cu.c0) + 1, np = d(cu.p1) - d(cu.p0) + 1, n = Math.max(nc, np);
   const pick = (from, len, a, b) => { const o = []; for (let k = a; k < Math.min(b, len); k++) { const i = R.byNum.get(d(from) + k); if (i != null) o.push(i); } return o; };
   const md = n => { const x = C.iso(n); return `${+x.slice(5, 7)}/${+x.slice(8)}`; };
   const span = (from, len, a, b) => { const e = Math.min(b, len) - 1; return a > e ? '' : C.iso(d(from) + a).slice(2).replace(/-/g, '.') + (e > a ? '~' + md(d(from) + e) : ''); };
-  const slots = [];
-  for (let a = 0; a < n; a += bk) {
-    const b = a + bk;
-    slots.push({ label: a < nc ? md(d(cu.c0) + a) : `+${a + 1}일`, sub: '', idx: { p: pick(cu.p0, np, a, b), c: pick(cu.c0, nc, a, b) },
-                 tips: { p: span(cu.p0, np, a, b), c: span(cu.c0, nc, a, b) }, dn: a < nc ? [d(cu.c0) + a, d(cu.c0) + Math.min(b, nc) - 1] : null });
+  // 묶음 경계(실적기간 첫날부터의 날짜 수)
+  const cuts = [0];
+  for (let k = 1; k < n; k++) {
+    if (S.grain === 'day' || (S.grain === 'week' && k % 7 === 0) || (S.grain === 'month' && C.iso(d(cu.c0) + k).slice(8) === '01')) cuts.push(k);
   }
+  const slots = [];
+  cuts.forEach((a, ci) => {
+    const b = ci + 1 < cuts.length ? cuts[ci + 1] : n, x = C.iso(d(cu.c0) + a);
+    const label = S.grain === 'month' ? `${String(x).slice(2, 4)}.${x.slice(5, 7)}` : S.grain === 'week' ? `${md(d(cu.c0) + a)}~` : (a < nc ? md(d(cu.c0) + a) : `+${a + 1}일`);
+    const sub = S.grain === 'day' ? '' : `${Math.min(b, nc) - a > 0 ? Math.min(b, nc) - a : 0}일`;
+    slots.push({ label, sub, idx: { p: pick(cu.p0, np, a, b), c: pick(cu.c0, nc, a, b) },
+                 tips: { p: span(cu.p0, np, a, b), c: span(cu.c0, nc, a, b) }, dn: a < nc ? [d(cu.c0) + a, d(cu.c0) + Math.min(b, nc) - 1] : null });
+  });
   const marks = [];
   for (const ev of C.EVENTS) { const n0 = C.dnum(ev.date), i = slots.findIndex(s => s.dn && n0 >= s.dn[0] && n0 <= s.dn[1]); if (i >= 0) marks.push({ i, label: ev.label, date: ev.date }); }
   return { custom: true, keys: ['p', 'c'], names: { p: '비교기간', c: '실적기간' }, styles: CUSTOM_STYLE, cmps: [{ j: 0, label: '비교기간비' }],
-           slots, focus: null, marks, at, bk, cu, unitN: bk > 1 ? '7일 단위' : '일별' };
+           slots, focus: null, marks, at, cu, unitN: { month: '실적기간의 달력 월 단위', week: '7일 단위', day: '하루 단위' }[S.grain] };
 }
 function yearSlots() {
   const ps = plist(), at = ps[atIndex(ps)];
@@ -680,7 +687,7 @@ function renderTrend(main) {
     ? `<div class="seg" role="group" aria-label="지표">${C.METRICS.map(m => `<button data-set="trMetric" data-v="${m.k}" aria-pressed="${m === met}">${m.n}</button>`).join('')}</div>
        <div class="seg" role="group" aria-label="세로 눈금"><button data-set="trScale" data-v="own" aria-pressed="${S.trScale !== 'same'}" title="그래프마다 눈금을 따로 — 모양(흐름) 비교">개별 눈금</button><button data-set="trScale" data-v="same" aria-pressed="${S.trScale === 'same'}" title="모든 그래프 눈금을 같게 — 크기 비교">같은 눈금</button></div>`
     : `<label class="field">광고유형 <select id="trType">${[C.TOTAL, ...types].map(t => `<option value="${esc(t)}"${t === S.trType ? ' selected' : ''}>${esc(tName(t))}</option>`).join('')}</select></label>`;
-  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간' : grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${Y.custom ? `실적기간 vs 비교기간을 같은 순서의 날짜끼리 (${Y.unitN}) · 숫자는 기간 전체` : (S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일') + ' · 음영 = 기준 기간'} · 세로 점선 = 쿠폰 정책 변경</span><div class="lg">${lg}</div></div>
+  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${Y.custom ? `실적기간 vs 비교기간을 같은 순서의 날짜끼리 (${Y.unitN}) · 숫자는 기간 전체` : (S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일') + ' · 음영 = 기준 기간'} · 세로 점선 = 쿠폰 정책 변경</span><div class="lg">${lg}</div></div>
     <div class="tr-pick">${pick}</div>
     <div class="charts" id="trCharts">${cards.map((c, k) => {
       const tot = Y.custom ? [periodVal(c.m, TS[c.t], X.prev), periodVal(c.m, TS[c.t], X.cur)] : c.v.map(a => a[focus]);
@@ -692,7 +699,7 @@ function renderTrend(main) {
         <div class="cc-b tr-b" id="trc-${k}"></div></div>`;
     }).join('')}</div></section>`;
 
-  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간' : grainN} 실적 (${modeN})</h2><span class="desc">${esc(split ? met.n + ' · 합계 + 광고유형' : tName(S.trType))} · ${Y.custom ? `실적기간 ${esc(rangeTxt(Y.cu.c0, Y.cu.c1))} vs 비교기간 ${esc(rangeTxt(Y.cu.p0, Y.cu.p1))} · 맨 앞 열 = 기간 전체` : `${keys.map(yName).join(' · ')} · 전년비 = ${yName(keys[2])} vs ${yName(keys[1])} · 전전년비 = ${yName(keys[2])} vs ${yName(keys[0])}`} · 증가 +, 감소 △</span>
+  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 실적 (${modeN})</h2><span class="desc">${esc(split ? met.n + ' · 합계 + 광고유형' : tName(S.trType))} · ${Y.custom ? `실적기간 ${esc(rangeTxt(Y.cu.c0, Y.cu.c1))} vs 비교기간 ${esc(rangeTxt(Y.cu.p0, Y.cu.p1))} · 맨 앞 열 = 기간 전체` : `${keys.map(yName).join(' · ')} · 전년비 = ${yName(keys[2])} vs ${yName(keys[1])} · 전전년비 = ${yName(keys[2])} vs ${yName(keys[0])}`} · 증가 +, 감소 △</span>
     <div class="tools"><div class="seg" role="group" aria-label="표 형태"><button data-set="layout" data-v="block" aria-pressed="${S.layout === 'block'}">엑셀형</button><button data-set="layout" data-v="stack" aria-pressed="${S.layout !== 'block'}">연도별 행</button></div>
     <button class="btn" data-csv-for="trTbl" data-name="추이_${grainN}">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid tg" id="trTbl"></table></div></section>`;
@@ -854,7 +861,7 @@ function notesTrend() {
     <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
     <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(연회색 실선) · 전전년(진회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
-    <li>비교 '선택': 흐름 · 실적 표가 실적기간(파란 실선) vs 비교기간(진회색 점선)으로 바뀜 — 같은 순서의 날짜끼리(1일째 ↔ 1일째, 120일 넘으면 7일 단위), 표 맨 앞 열 = 기간 전체</li>
+    <li>비교 '선택': 흐름 · 실적 표가 실적기간(파란 실선) vs 비교기간(진회색 점선)으로 바뀜 — 같은 순서의 날짜끼리(1일째 ↔ 1일째, 월별 · 주별 · 일별 버튼으로 묶음 단위 선택), 표 맨 앞 열 = 기간 전체</li>
     <li>요약 타일 비교: 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
     <li>세로 점선: 2026-07-01 20% 앱전용 쿠폰 발행 · 2026-08-01 5,000원 웰컴백 쿠폰 앱전용 변경 (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)</li>
     ${naNote()}
