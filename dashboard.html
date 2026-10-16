@@ -205,6 +205,19 @@ table.tg tr.r-prev th.s2,table.tg tr.r-yoy th.s2{color:var(--muted);font-weight:
 table.tg tbody tr:nth-child(even) td{background-image:none}
 table.tg tbody tr:not(.grp):hover td,table.tg tbody tr:not(.grp):hover th.stick{background-image:linear-gradient(var(--row-alt),var(--row-alt))}
 
+/* 연도 겹쳐 보기 */
+.tip .ry{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;white-space:nowrap}
+.tip .ry span:first-child{display:inline-flex;align-items:center;gap:5px;color:var(--ink-2)}
+.tip .ry span:last-child{text-align:right}
+.tr-pick{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:-2px 0 10px}
+.ky,.cc-b svg.ky{flex:none;vertical-align:middle;display:inline-block;width:16px;overflow:visible}
+.cc-v .cc-d{margin-left:auto;font-size:12px;color:var(--muted)}
+.cc-v .cc-d b{font-size:12px;font-weight:600}
+table.tg th small.u{display:inline;margin-left:6px;font-weight:400;color:var(--muted);font-size:11px}
+table.tg th .ky{margin-right:6px}
+table.tg tr.r-yoy th.yl{color:var(--muted);font-weight:400;padding-left:32px}
+table.tg tr.r-prev th.stick{color:var(--ink-2);font-weight:400}
+
 /* 빈 화면 · 끌어다 놓기 */
 .drop-empty{margin:60px auto;max-width:640px;text-align:center;padding:40px 24px;border:2px dashed var(--axis);border-radius:14px;background:var(--surface)}
 .drop-empty h2{margin:0 0 8px;font-size:18px}
@@ -249,7 +262,7 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
         <button data-set="cmp" data-v="pop" id="btnPop">전월</button>
       </div>
       <div class="seg" role="group" aria-label="그래프 보기" id="viewSeg">
-        <button data-set="view" data-v="total">합계</button>
+        <button data-set="view" data-v="total">지표별</button>
         <button data-set="view" data-v="split">유형별</button>
       </div>
       <button class="filt-tg" id="btnFilt" type="button" aria-expanded="false" aria-controls="filtRows"><span class="filt-ic" aria-hidden="true">▸</span>필터<b id="filtN" hidden></b><span class="filt-sum" id="filtSum"></span></button>
@@ -290,7 +303,7 @@ const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용�
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
-  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 2, at: '', range: { month: 'all', week: 26, day: 60 },
+  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 2, trType: '합계', trMetric: 'fp', trScale: 'own', at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'cost' },
   da: { metric: 'join', media: null, kakao: true },
@@ -540,40 +553,97 @@ function trendSub(p) {
 }
 const trendColor = t => t === C.TOTAL ? 'var(--c1)' : `var(${COLORS[t]})`;
 
-function renderTrend(main) {
-  const ps = plist(), sh = shown(ps), at = sh[sh.length - 1], TS = typeSeries(), types = selTypes();
-  const split = S.view === 'split', other = S.cmp === 'yoy' ? 'pop' : 'yoy';
-  const rowsT = split ? [C.TOTAL, ...types] : [C.TOTAL];          // 표 행
-  const lines = split ? types : [C.TOTAL];                          // 차트 선
-  const cmps = sh.map(p => C.compareIdx(R, p, S.grain, S.cmp));
-  const unitS = m => C.unit(m.kind, S.mode);
-  const modeN = S.mode === 'avg' ? '일평균' : '누계';
-  const grainN = { month: '월별', week: '주별', day: '일별' }[S.grain];
-  const cmpBase = S.cmp === 'yoy' ? '전년 동기간' : cmpName() + ' (직전 기간)';
-  const filt = filterSummary(), who = (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 ${types.length}개 유형 합계`) + (filt ? ' · ' + filt : '');
-  // 지표 × 계열 값 한 번만 계산
-  const MODEL = {};
-  for (const m of C.METRICS) {
-    MODEL[m.k] = {};
-    for (const t of new Set([...rowsT, ...lines])) MODEL[m.k][t] = sh.map((p, i) => ({ c: periodVal(m, TS[t], p.idx), p: periodVal(m, TS[t], cmps[i]) }));
+// 연도 겹쳐 보기 — 기준 기간의 연도(y0)와 앞의 두 해를 같은 가로축(월 1~12 · 주차 · 날짜)에 겹친다
+//  월: 같은 달. 기준 연도의 진행 중인 달은 앞의 해도 같은 일수(1~N일)만
+//  주 · 일: 364일 · 728일 전(같은 요일)
+const YEAR_STYLE = [  // [y0-2, y0-1, y0]
+  { color: 'var(--prev)', dash: '4 3', w: 1.6 },
+  { color: 'var(--ink-2)', dash: '', w: 1.8 },
+  { color: 'var(--c1)', dash: '', w: 2.4 },
+];
+function yearSlots() {
+  const ps = plist(), at = ps[atIndex(ps)], y0 = at.y, years = [y0 - 2, y0 - 1, y0];
+  const rng = (a, b) => { const o = []; for (let n = a; n <= b; n++) o.push(n); return o; };
+  const fromDn = dns => dns.map(n => R.byNum.get(n)).filter(i => i != null);
+  const span = dns => dns.length ? `${C.iso(dns[0]).slice(2).replace(/-/g, '.')}${dns.length > 1 ? '~' + C.iso(dns[dns.length - 1]).slice(5).replace('-', '/') : ''}` : '';
+  let slots, focus;
+  if (S.grain === 'month') {
+    const byKey = new Map(ps.map(p => [p.key, p]));
+    slots = [];
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, '0'), p = byKey.get(`${y0}-${mm}`);
+      const nd = p && p.partial ? p.lastN - p.start + 1 : null, idx = {}, tips = {};
+      for (const y of years) {
+        const q = y === y0 ? p : byKey.get(`${y}-${mm}`);
+        idx[y] = !q ? [] : (y === y0 || !nd ? q.idx : q.idx.filter(i => R.dn[i] - q.start < nd));
+        tips[y] = `${String(y).slice(2)}.${mm}${nd ? ` (1~${nd}일)` : ''}`;
+      }
+      slots.push({ label: `${m}월`, sub: nd ? `~${nd}일` : '', idx, tips, p });
+    }
+    focus = at.m - 1;
+  } else {
+    slots = shown(ps).map(p => {
+      const dns = p.partial || S.grain === 'day' ? p.idx.map(i => R.dn[i]) : rng(p.start, p.end), idx = {}, tips = {};
+      for (const y of years) {
+        const k = y0 - y, sd = dns.map(n => n - 364 * k);
+        idx[y] = k ? fromDn(sd) : p.idx;
+        tips[y] = k ? span(sd) : curTip(p);
+      }
+      return { label: p.short, sub: trendSub(p), idx, tips, p };
+    });
+    focus = slots.length - 1;
   }
-  const atIdx = sh.length - 1, cmpAt = cmps[atIdx], othAt = C.compareIdx(R, at, S.grain, other);
+  const marks = [];
+  for (const ev of C.EVENTS) {
+    const n = C.dnum(ev.date), i = slots.findIndex(s => s.p && n >= s.p.start && n <= s.p.end);
+    if (i >= 0) marks.push({ i, label: ev.label, date: ev.date });
+  }
+  return { years, y0, slots, focus, marks, at };
+}
 
+function renderTrend(main) {
+  const TS = typeSeries(), types = selTypes(), split = S.view === 'split';
+  const Y = yearSlots(), { years, y0, slots, focus, at } = Y, other = S.cmp === 'yoy' ? 'pop' : 'yoy';
+  const yName = y => `${String(y).slice(2)}년`;
+  const unitS = m => C.unit(m.kind, S.mode), modeN = S.mode === 'avg' ? '일평균' : '누계';
+  const grainN = { month: '월별', week: '주별', day: '일별' }[S.grain];
+  const tName = t => t === C.TOTAL ? '합계' : t;
+  if (S.trType !== C.TOTAL && !types.includes(S.trType)) S.trType = C.TOTAL;
+  const met = C.METRIC[S.trMetric] && C.METRICS.includes(C.METRIC[S.trMetric]) ? C.METRIC[S.trMetric] : C.METRIC.fp;
+  const filt = filterSummary();
+  // 카드(그래프) 목록: 지표별 = 한 유형 × 지표 8개 · 유형별 = 한 지표 × (합계 + 유형)
+  const cards = split ? [C.TOTAL, ...types].map(t => ({ t, m: met })) : C.METRICS.map(m => ({ t: S.trType, m }));
+  const vals = c => years.map(y => slots.map(s => periodVal(c.m, TS[c.t], s.idx[y])));
+  cards.forEach(c => { c.v = vals(c); });
+
+  // 실적 요약 — 지표별은 고른 유형, 유형별은 합계
+  const tt = split ? C.TOTAL : S.trType, T = TS[tt];
+  const cmpAt = C.compareIdx(R, at, S.grain, S.cmp), othAt = C.compareIdx(R, at, S.grain, other);
+  const who = (tt === C.TOTAL ? (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 ${types.length}개 유형 합계`) : tt) + (filt ? ' · ' + filt : '');
   let h = `<section><div class="sec-h"><h2>실적 요약</h2><span class="desc">${esc(curTip(at))}${at.partial ? ' 진행 중' : ''} · ${modeN} · ${esc(who)} · ${cmpLabel()}: ${esc(cmpTip(at, cmpAt))}${S.cmp === 'yoy' && S.grain !== 'month' ? '(동요일)' : ''} 대비</span></div><div class="tiles" id="tiles"></div></section>`;
-  const lg = split
-    ? types.map(t => `<span><i class="k" style="background:${trendColor(t)}"></i>${esc(t)}</span>`).join('')
-    : `<span><i class="k" style="background:${trendColor(C.TOTAL)}"></i>실적</span><span><i class="k prev"></i>${esc(cmpBase)}</span>`;
-  h += `<section><div class="sec-h"><h2>${grainN} 흐름</h2><span class="desc">${modeN} · ${split ? `광고유형별 · 마우스를 올리면 ${cmpLabel()}` : `${esc(who)} vs ${esc(cmpBase)}`} · 음영 = 기준 기간 · 세로 점선 = 쿠폰 정책 변경</span><div class="lg">${lg}</div></div>
-    <div class="charts" id="trCharts">${C.METRICS.map(m => `<div class="card cc"><div class="cc-t">${m.n}</div><div class="cc-s">${unitS(m)}${m.lowerBetter ? ' · 낮을수록 좋음' : ''}</div><div class="cc-b tr-b" id="trc-${m.k}"></div></div>`).join('')}</div></section>`;
-  h += `<section><div class="sec-h"><h2>${grainN} 실적 (${modeN})</h2><span class="desc">${esc(split ? '합계 + 광고유형' : who)} · 비교 ${esc(cmpBase)} · 증가 +, 감소 △ (CPA 는 낮아지면 초록)</span>
-    <div class="tools"><div class="seg" role="group" aria-label="표 형태"><button data-set="layout" data-v="block" aria-pressed="${S.layout === 'block'}">엑셀형</button><button data-set="layout" data-v="stack" aria-pressed="${S.layout !== 'block'}">3단 비교</button></div>
+
+  const lg = years.map((y, k) => `<span>${keySvg(YEAR_STYLE[k])}${yName(y)}</span>`).join('');
+  const pick = split
+    ? `<div class="seg" role="group" aria-label="지표">${C.METRICS.map(m => `<button data-set="trMetric" data-v="${m.k}" aria-pressed="${m === met}">${m.n}</button>`).join('')}</div>
+       <div class="seg" role="group" aria-label="세로 눈금"><button data-set="trScale" data-v="own" aria-pressed="${S.trScale !== 'same'}" title="그래프마다 눈금을 따로 — 모양(흐름) 비교">개별 눈금</button><button data-set="trScale" data-v="same" aria-pressed="${S.trScale === 'same'}" title="모든 그래프 눈금을 같게 — 크기 비교">같은 눈금</button></div>`
+    : `<label class="field">광고유형 <select id="trType">${[C.TOTAL, ...types].map(t => `<option value="${esc(t)}"${t === S.trType ? ' selected' : ''}>${esc(tName(t))}</option>`).join('')}</select></label>`;
+  h += `<section><div class="sec-h"><h2>${grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일'} · 음영 = 기준 기간 · 세로 점선 = 쿠폰 정책 변경</span><div class="lg">${lg}</div></div>
+    <div class="tr-pick">${pick}</div>
+    <div class="charts" id="trCharts">${cards.map((c, k) => {
+      const v = c.v[2][focus], p = c.v[1][focus], d = fmtD(v, p, c.m.lowerBetter);
+      const title = split ? `<i class="sw" style="background:${trendColor(c.t)}"></i>${esc(tName(c.t))}` : esc(c.m.n);
+      return `<div class="card cc"><div class="cc-t">${title}</div>
+        <div class="cc-v"><b>${C.fmt(c.m.kind, v)}</b><small>${esc(slots[focus] ? slots[focus].label : '')} · ${unitS(c.m)}</small><span class="cc-d">전년비 <b class="${d.c}">${d.t}</b></span></div>
+        <div class="cc-b tr-b" id="trc-${k}"></div></div>`;
+    }).join('')}</div></section>`;
+
+  h += `<section><div class="sec-h"><h2>${grainN} 실적 (${modeN})</h2><span class="desc">${esc(split ? met.n + ' · 합계 + 광고유형' : tName(S.trType))} · ${years.map(yName).join(' · ')} · 전년비 = ${yName(y0)} vs ${yName(y0 - 1)} · 증가 +, 감소 △</span>
+    <div class="tools"><div class="seg" role="group" aria-label="표 형태"><button data-set="layout" data-v="block" aria-pressed="${S.layout === 'block'}">엑셀형</button><button data-set="layout" data-v="stack" aria-pressed="${S.layout !== 'block'}">연도별 행</button></div>
     <button class="btn" data-csv-for="trTbl" data-name="유형별추이_${grainN}">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid tg" id="trTbl"></table></div></section>`;
   h += notesTrend();
   main.innerHTML = h;
 
-  // 요약 타일 — 기준 기간 · 선택 유형 합계
-  const T = TS[C.TOTAL];
   $id('tiles').innerHTML = C.METRICS.map(m => {
     const v = periodVal(m, T, at.idx), c = periodVal(m, T, cmpAt), o = periodVal(m, T, othAt);
     const d1 = fmtD(v, c, m.lowerBetter), d2 = fmtD(v, o, m.lowerBetter);
@@ -584,57 +654,59 @@ function renderTrend(main) {
       <div class="t-r"><span>${cmpName()}</span><span>${C.fmt(m.kind, c)}</span></div></div>`;
   }).join('');
 
-  // 흐름 차트
-  const labels = sh.map(p => p.short), tips = sh.map(curTip), ptips = sh.map((p, i) => cmpTip(p, cmps[i])), marks = eventMarks(sh);
-  for (const m of C.METRICS) {
-    trendChart($id('trc-' + m.k), { m, single: !split, labels, tips, ptips, marks, focus: atIdx, cmpLbl: cmpLabel(), unit: unitS(m),
-      series: lines.map(t => ({ name: t === C.TOTAL ? '합계' : t, color: trendColor(t), cur: MODEL[m.k][t].map(v => v.c), prev: MODEL[m.k][t].map(v => v.p) })) });
+  // 같은 눈금: 모든 카드의 값 범위를 합쳐 하나로
+  let yr = null;
+  if (split && S.trScale === 'same') {
+    const all = cards.flatMap(c => c.v.flat()).map(v => C.scaled(met.kind, v)).filter(v => v != null && isFinite(v));
+    if (all.length) yr = [Math.min(...all), Math.max(...all)];
   }
+  const labels = slots.map(s => s.label);
+  cards.forEach((c, k) => yearChart($id('trc-' + k), {
+    m: c.m, labels, focus, marks: Y.marks, yr, unit: unitS(c.m),
+    lines: years.map((y, j) => ({ name: yName(y), ...YEAR_STYLE[j], vals: c.v[j], tips: slots.map(s => s.tips[y]) })),
+  }));
 
   // 실적 표
-  const block = S.layout === 'block', n = sh.length;
-  const head = (p, k, extra = '') => `<th class="p${k === atIdx ? ' now' : ''}${extra}" title="${esc(tips[k])}">${esc(p.short)}${trendSub(p) ? `<small>${esc(trendSub(p))}</small>` : ''}</th>`;
-  const cell = (t, k, cls = '') => `<td class="${[cls, k === atIdx ? 'now' : ''].filter(Boolean).join(' ')}">${t}</td>`;
-  const dCell = (m, v, k, cls = '') => { const d = fmtD(v.c, v.p, m.lowerBetter); return cell(d.t, k, [d.c, cls].filter(Boolean).join(' ')); };
+  const block = S.layout === 'block', n = slots.length;
+  const head = (s, k, extra = '') => `<th class="p${k === focus ? ' now' : ''}${extra}">${esc(s.label)}${s.sub ? `<small>${esc(s.sub)}</small>` : ''}</th>`;
+  const cell = (t, k, cls = '') => `<td class="${[cls, k === focus ? 'now' : ''].filter(Boolean).join(' ')}">${t}</td>`;
+  const f = (m, v) => C.fmt(m.kind, v, { fixed: 1 });
+  const dRow = (c, k, cls = '') => { const d = fmtD(c.v[2][k], c.v[1][k], c.m.lowerBetter); return cell(d.t, k, [d.c, cls].filter(Boolean).join(' ')); };
+  const gName = c => split ? `<i class="sw" style="background:${trendColor(c.t)}"></i>${esc(tName(c.t))}` : esc(c.m.n);
   let t = '<thead>';
   if (block) {
-    t += `<tr><th class="stick s1" rowspan="2">구분</th><th class="band" colspan="${n}">실적</th><th class="band bk" colspan="${n}">${cmpLabel()}</th><th class="band bk" colspan="${n}">${esc(cmpBase)}</th></tr>`;
-    t += `<tr class="h2">${sh.map((p, k) => head(p, k)).join('')}${sh.map((p, k) => head(p, k, k === 0 ? ' bk' : '')).join('')}${sh.map((p, k) => head(p, -9, k === 0 ? ' bk' : '')).join('')}</tr>`;
-  } else t += `<tr><th class="stick s1">구분</th><th class="stick s2">기준</th>${sh.map((p, k) => head(p, k)).join('')}</tr>`;
-  t += '</thead><tbody>';
-  const sticky = block ? 1 : 2, rest = block ? n * 3 : n;
-  for (const m of C.METRICS) {
-    t += `<tr class="grp"><th class="stick s1" colspan="${sticky}">${m.n}<small>${unitS(m)}</small></th><td colspan="${rest}"></td></tr>`;
-    for (const r of rowsT) {
-      const vals = MODEL[m.k][r], cls = r === C.TOTAL ? 'top' : 'ch';
-      const lab = `<i class="sw" style="background:${trendColor(r)}"></i>${esc(r === C.TOTAL ? '합계' : r)}`;
-      const f = v => C.fmt(m.kind, v, { fixed: 1 });
-      if (block) {
-        t += `<tr class="${cls}"><th class="stick s1">${lab}</th>` + vals.map((v, k) => cell(f(v.c), k)).join('')
-          + vals.map((v, k) => dCell(m, v, k, k === 0 ? 'bk' : '')).join('')
-          + vals.map((v, k) => cell(f(v.p), -9, 'pv' + (k === 0 ? ' bk' : ''))).join('') + '</tr>';
-      } else {
-        t += `<tr class="${cls} r-cur"><th class="stick s1">${lab}</th><th class="stick s2">실적</th>${vals.map((v, k) => cell(f(v.c), k)).join('')}</tr>`
-          + `<tr class="${cls} r-prev"><th class="stick s1"></th><th class="stick s2">${cmpName()}</th>${vals.map((v, k) => cell(f(v.p), k, 'pv')).join('')}</tr>`
-          + `<tr class="${cls} r-yoy"><th class="stick s1"></th><th class="stick s2">${cmpLabel()}</th>${vals.map((v, k) => dCell(m, v, k)).join('')}</tr>`;
-      }
+    t += `<tr><th class="stick s1" rowspan="2">구분</th>${[...years].reverse().map((y, j) => `<th class="band${j ? ' bk' : ''}" colspan="${n}">${yName(y)}</th>`).join('')}<th class="band bk" colspan="${n}">전년비</th></tr>`;
+    t += `<tr class="h2">${[0, 1, 2, 3].map(b => slots.map((s, k) => head(s, b === 0 || b === 3 ? k : -9, k === 0 && b ? ' bk' : '')).join('')).join('')}</tr></thead><tbody>`;
+    for (const c of cards) {
+      t += `<tr class="${c.t === C.TOTAL && split ? 'top' : 'ch'}"><th class="stick s1">${gName(c)}<small class="u">${unitS(c.m)}</small></th>`
+        + [2, 1, 0].map((j, b) => c.v[j].map((v, k) => cell(f(c.m, v), b ? -9 : k, (b ? 'pv' : '') + (k === 0 && b ? ' bk' : ''))).join('')).join('')
+        + c.v[2].map((v, k) => dRow(c, k, k === 0 ? 'bk' : '')).join('') + '</tr>';
+    }
+  } else {
+    t += `<tr><th class="stick s1">구분</th>${slots.map((s, k) => head(s, k)).join('')}</tr></thead><tbody>`;
+    for (const c of cards) {
+      t += `<tr class="grp"><th class="stick s1">${gName(c)}<small>${unitS(c.m)}</small></th><td colspan="${n}"></td></tr>`;
+      [2, 1, 0].forEach((j, b) => { t += `<tr class="${b ? 'r-prev' : 'r-cur'}"><th class="stick s1">${keySvg(YEAR_STYLE[j])}${yName(years[j])}</th>${c.v[j].map((v, k) => cell(f(c.m, v), k, b ? 'pv' : '')).join('')}</tr>`; });
+      t += `<tr class="r-yoy"><th class="stick s1 yl">전년비</th>${c.v[2].map((v, k) => dRow(c, k)).join('')}</tr>`;
     }
   }
   const tbl = $id('trTbl');
   tbl.innerHTML = t + '</tbody>';
-  if (!block) { const s1 = tbl.querySelector('thead th.s1'); if (s1) tbl.style.setProperty('--s1w', s1.offsetWidth + 'px'); }
-  const wrap = tbl.parentElement, th = block ? tbl.querySelectorAll('thead tr.h2 th')[atIdx] : tbl.querySelectorAll('thead th')[atIdx + 2];
+  const wrap = tbl.parentElement, th = block ? tbl.querySelectorAll('thead tr.h2 th')[focus] : tbl.querySelectorAll('thead th')[focus + 1];
   wrap.scrollLeft = th ? Math.max(0, th.offsetLeft + th.offsetWidth - wrap.clientWidth + 40) : 0;
 }
+const keySvg = st => `<svg class="ky" width="16" height="6" aria-hidden="true"><line x1="1" y1="3" x2="15" y2="3" stroke="${st.color}" stroke-width="2"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}/></svg>`;
 
-// 흐름 차트 — 합계면 실적선 + 비교 기간(회색), 유형별이면 유형마다 한 선 · 끝값 라벨 · 기준 기간 음영
-function trendChart(host, o) {
-  const W = Math.max(240, Math.floor(host.clientWidth)), H = 184, kind = C.METRIC[o.m.k || o.m].kind, mk = C.METRIC[o.m.k || o.m];
-  const L = 44, Rr = 10, T = 16, B = 24, pw = W - L - Rr, ph = H - T - B, n = o.labels.length, SR = o.series;
+// 연도 겹친 선 그래프 — lines = [y0-2, y0-1, y0] · 끝값 라벨은 기준 연도 · 툴팁에 세 해 값과 전년비
+function yearChart(host, o) {
+  const mk = o.m, kind = mk.kind;
+  const W = Math.max(240, Math.floor(host.clientWidth)), H = 184;
+  const L = 44, Rr = 10, T = 16, B = 24, pw = W - L - Rr, ph = H - T - B, n = o.labels.length, SR = o.lines, base = SR[SR.length - 1], prev = SR[SR.length - 2];
   const sv = v => { const x = C.scaled(kind, v); return x == null || !isFinite(x) ? null : x; };
   const okv = v => sv(v) != null;
   let vmin = Infinity, vmax = -Infinity;
-  for (const sr of SR) for (const arr of (o.single ? [sr.cur, sr.prev] : [sr.cur])) for (const v of arr) { const x = sv(v); if (x != null) { vmin = Math.min(vmin, x); vmax = Math.max(vmax, x); } }
+  if (o.yr) [vmin, vmax] = o.yr;
+  else for (const sr of SR) for (const v of sr.vals) { const x = sv(v); if (x != null) { vmin = Math.min(vmin, x); vmax = Math.max(vmax, x); } }
   if (vmin === Infinity) { host.innerHTML = '<div class="nodata">데이터 없음</div>'; return; }
   const sp = vmax - vmin > Math.abs(vmax) * 1e-6 ? vmax - vmin : (Math.abs(vmax) * 0.1 || 1);
   let lo = vmin - sp * 0.12; const hi = vmax + sp * 0.12;
@@ -642,84 +714,57 @@ function trendChart(host, o) {
   const step = niceStep((hi - lo) / 4), t0 = Math.floor(lo / step) * step, t1 = Math.ceil(hi / step) * step;
   const dp = Math.min(2, (String(+step.toFixed(4)).split('.')[1] || '').length);
   const X = i => L + (n <= 1 ? pw / 2 : i * pw / (n - 1));
-  const Y = v => T + ph * (1 - (sv(v) - t0) / ((t1 - t0) || 1));
   const Yr = x => T + ph * (1 - (x - t0) / ((t1 - t0) || 1));
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" tabindex="0" aria-label="${esc(mk.n)} 추이">`;
+  const Y = v => Yr(sv(v));
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" tabindex="0" aria-label="${esc(mk.n)} 연도별 추이">`;
   for (let v = t0; v <= t1 + step / 2; v += step) { const y = Yr(v).toFixed(1); s += `<line class="gl" x1="${L}" x2="${W - Rr}" y1="${y}" y2="${y}"/><text class="yt" x="${L - 6}" y="${y}" dy="0.32em">${C.fmtNum(v, dp)}</text>`; }
   if (o.focus != null && o.focus >= 0 && o.focus < n) {
     const fw = n > 1 ? Math.max(6, pw / (n - 1) * 0.8) : 24;
     s += `<rect class="fband" x="${(X(o.focus) - fw / 2).toFixed(1)}" y="${T}" width="${fw.toFixed(1)}" height="${ph}"/>`;
   }
-  const gap = n > 1 ? pw / (n - 1) : pw, every = Math.max(1, Math.ceil((S.grain === 'week' ? 44 : 36) / gap));
+  const gap = n > 1 ? pw / (n - 1) : pw, every = Math.max(1, Math.ceil((S.grain === 'week' ? 44 : S.grain === 'month' ? 26 : 36) / gap));
   for (let i = 0; i < n; i++) {
-    const on = (n - 1 - i) % every === 0, x = X(i).toFixed(1);
+    const on = S.grain === 'month' ? i % every === 0 : (n - 1 - i) % every === 0, x = X(i).toFixed(1);
     s += `<line class="xtick${on ? ' on' : ''}" x1="${x}" x2="${x}" y1="${T + ph}" y2="${T + ph + (on ? 4 : 2.5)}"/>`;
     if (on) s += `<text class="xt" x="${x}" y="${H - 6}" text-anchor="middle">${esc(o.labels[i])}</text>`;
   }
   for (const e of o.marks || []) s += `<line class="evl" x1="${X(e.i)}" x2="${X(e.i)}" y1="${T}" y2="${T + ph}"/>`;
   const path = arr => { let d = '', pen = false; arr.forEach((v, i) => { if (!okv(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(v).toFixed(1); pen = true; }); return d; };
   const many = n > 16;
-  const dots = (arr, attr, r, all) => arr.map((v, i) => okv(v) && (all || (!okv(arr[i - 1]) && !okv(arr[i + 1]))) ? `<circle ${attr} cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${r}"/>` : '').join('');
-  if (o.single) s += `<path class="ln prev" d="${path(SR[0].prev)}"/>` + dots(SR[0].prev, 'class="dot prev"', 3.5, !many);
-  SR.forEach(sr => { s += `<path class="ln" style="stroke:${sr.color}" d="${path(sr.cur)}"/>`; });
-  SR.forEach(sr => { s += dots(sr.cur, `class="dot" style="fill:${sr.color}"`, o.single ? 4 : 3, o.single && !many); });
-  const ends = SR.map(sr => { let li = -1; sr.cur.forEach((v, i) => { if (okv(v)) li = i; }); return li < 0 ? null : { sr, i: li, x: X(li), y: Y(sr.cur[li]), v: sr.cur[li] }; }).filter(Boolean);
-  const kept = [];
-  ends.slice().sort((a, b) => a.y - b.y).forEach(e => { if (kept.every(k => Math.abs(k.y - e.y) >= 14)) kept.push(e); });
-  for (const e of ends) if (many || !o.single) s += `<circle class="dot" style="fill:${e.sr.color}" cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="3.5"/>`;
-  for (const e of kept) {
-    const anchor = e.x > W - Rr - 40 ? 'end' : (e.x < L + 40 ? 'start' : 'middle');
-    s += `<text class="endl" x="${e.x.toFixed(1)}" y="${(e.y - 9).toFixed(1)}" text-anchor="${anchor}">${C.fmt(kind, e.v)}</text>`;
+  for (const sr of SR) {
+    s += `<path class="ln" style="stroke:${sr.color};stroke-width:${sr.w}${sr.dash ? `;stroke-dasharray:${sr.dash}` : ''}" d="${path(sr.vals)}"/>`;
+    s += sr.vals.map((v, i) => okv(v) && ((sr === base && !many) || (!okv(sr.vals[i - 1]) && !okv(sr.vals[i + 1]))) ? `<circle class="dot" style="fill:${sr.color}" cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${sr === base ? 3.5 : 2.5}"/>` : '').join('');
   }
-  if (o.single && ends.length) {
-    const e = ends[0], pv = SR[0].prev[e.i];
-    if (okv(pv)) {
-      const py = Y(pv), curTop = e.y - 9;
-      let ty = py >= e.y ? py + 15 : py - 9;
-      if (Math.abs(ty - curTop) < 13) ty = py >= e.y ? Math.max(ty, curTop + 26) : curTop - 13;
-      ty = Math.max(T + 8, Math.min(T + ph - 2, ty));
-      const anchor = e.x > W - Rr - 40 ? 'end' : (e.x < L + 40 ? 'start' : 'middle');
-      s += `<circle class="dot prev" cx="${e.x.toFixed(1)}" cy="${py.toFixed(1)}" r="3"/><text class="endl endp" x="${e.x.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}">${C.fmt(kind, pv)}</text>`;
-    }
+  let li = -1; base.vals.forEach((v, i) => { if (okv(v)) li = i; });
+  if (li >= 0) {
+    const e = { x: X(li), y: Y(base.vals[li]) }, anchor = e.x > W - Rr - 40 ? 'end' : (e.x < L + 40 ? 'start' : 'middle');
+    s += `<circle class="dot" style="fill:${base.color}" cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="4"/><text class="endl" x="${e.x.toFixed(1)}" y="${(e.y - 9).toFixed(1)}" text-anchor="${anchor}">${C.fmt(kind, base.vals[li])}</text>`;
   }
   s += `<line class="guide" x1="0" x2="0" y1="${T}" y2="${T + ph}" visibility="hidden"/>`;
-  if (o.single) s += `<circle class="dot prev hp" r="4.5" visibility="hidden"/>`;
-  SR.forEach((sr, k) => { s += `<circle class="dot hs" data-s="${k}" style="fill:${sr.color}" r="4.5" visibility="hidden"/>`; });
+  SR.forEach((sr, k) => { s += `<circle class="dot hs" style="fill:${sr.color}" r="4" visibility="hidden"/>`; });
   s += `<rect x="${L - 8}" y="0" width="${pw + 16}" height="${H}" fill="transparent"/></svg><div class="tip" hidden></div>`;
   host.innerHTML = s;
-  for (const tx of host.querySelectorAll('.xt')) {   // 첫 · 마지막 라벨이 차트 밖으로 나가면 안쪽으로
+  for (const tx of host.querySelectorAll('.xt')) {
     const b = tx.getBBox(); if (!b.width) continue;
     const dx = b.x < 1 ? 1 - b.x : (b.x + b.width > W - 1 ? W - 1 - b.x - b.width : 0);
     if (dx) tx.setAttribute('x', (+tx.getAttribute('x') + dx).toFixed(1));
   }
-  const svg = host.querySelector('svg'), tip = host.querySelector('.tip'), guide = svg.querySelector('.guide');
-  const hp = svg.querySelector('.hp'), hs = [...svg.querySelectorAll('.hs')];
-  const lastI = Math.max(-1, ...ends.map(e => e.i));
+  const svg = host.querySelector('svg'), tip = host.querySelector('.tip'), guide = svg.querySelector('.guide'), hs = [...svg.querySelectorAll('.hs')];
   let cur = -1;
-  const place = (el, i, v) => { if (el && okv(v)) { el.setAttribute('cx', X(i)); el.setAttribute('cy', Y(v)); el.setAttribute('visibility', 'visible'); } else if (el) el.setAttribute('visibility', 'hidden'); };
-  const key = sr => `<i class="k" style="background:${sr.color}"></i>`;
   const show = i => {
     cur = i;
     guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.setAttribute('visibility', 'visible');
-    SR.forEach((sr, k) => place(hs[k], i, sr.cur[i]));
+    SR.forEach((sr, k) => { const el = hs[k], v = sr.vals[i]; if (okv(v)) { el.setAttribute('cx', X(i)); el.setAttribute('cy', Y(v)); el.setAttribute('visibility', 'visible'); } else el.setAttribute('visibility', 'hidden'); });
+    const d = fmtD(base.vals[i], prev.vals[i], mk.lowerBetter);
     const evs = (o.marks || []).filter(e => e.i === i).map(e => `<div class="ev">▲ ${esc(e.date.slice(5).replace('-', '/'))} ${esc(e.label)}</div>`).join('');
-    if (o.single) {
-      const sr = SR[0], d = fmtD(sr.cur[i], sr.prev[i], mk.lowerBetter);
-      place(hp, i, sr.prev[i]);
-      tip.innerHTML = `<b>${esc(o.tips[i])} <span class="hint">${esc(o.unit)}</span></b>
-        <div class="r"><span>${key(sr)}${esc(sr.name)}</span><span>${C.fmt(kind, sr.cur[i])}</span></div>
-        <div class="r"><span><i class="k prev"></i>${esc(o.ptips[i])}</span><span>${C.fmt(kind, sr.prev[i])}</span></div>
-        <div class="r d"><span>${esc(o.cmpLbl)}</span><span class="${d.c}">${d.t}</span></div>${evs}`;
-    } else {
-      tip.innerHTML = `<b>${esc(o.tips[i])}</b><div class="r3 h"><span></span><span>${esc(o.unit)}</span><span>${esc(o.cmpLbl)}</span></div>`
-        + [...SR].sort((a, b) => (b.cur[i] ?? -Infinity) - (a.cur[i] ?? -Infinity)).map(sr => { const d = fmtD(sr.cur[i], sr.prev[i], mk.lowerBetter);
-          return `<div class="r3"><span>${key(sr)}${esc(sr.name)}</span><span>${C.fmt(kind, sr.cur[i])}</span><span class="${d.c}">${d.t}</span></div>`; }).join('') + evs;
-    }
+    tip.innerHTML = `<b>${esc(o.labels[i])} <span class="hint">${esc(o.unit)}</span></b>`
+      + [...SR].reverse().map(sr => `<div class="ry"><span>${keySvg(sr)}${esc(sr.name)}</span><span class="hint">${esc(sr.tips[i] || '')}</span><span>${C.fmt(kind, sr.vals[i])}</span></div>`).join('')
+      + `<div class="ry d"><span>전년비</span><span></span><span class="${d.c}">${d.t}</span></div>${evs}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, x = X(i) / W * svg.getBoundingClientRect().width;
     tip.style.left = (x + 14 + tw > host.clientWidth ? Math.max(0, x - 14 - tw) : x + 14) + 'px';
   };
-  const hide = () => { cur = -1; tip.hidden = true; [guide, hp, ...hs].forEach(e => e && e.setAttribute('visibility', 'hidden')); };
+  const hide = () => { cur = -1; tip.hidden = true; [guide, ...hs].forEach(e => e.setAttribute('visibility', 'hidden')); };
   svg.addEventListener('pointermove', ev => {
     const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
     show(Math.max(0, Math.min(n - 1, n <= 1 ? 0 : Math.round((px - L) / (pw / (n - 1))))));
@@ -729,7 +774,7 @@ function trendChart(host, o) {
   svg.addEventListener('keydown', ev => {
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
     ev.preventDefault();
-    show(Math.max(0, Math.min(n - 1, (cur < 0 ? lastI : cur) + (ev.key === 'ArrowLeft' ? -1 : 1))));
+    show(Math.max(0, Math.min(n - 1, (cur < 0 ? Math.max(0, li) : cur) + (ev.key === 'ArrowLeft' ? -1 : 1))));
   });
 }
 const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
@@ -748,7 +793,8 @@ function notesTrend() {
     <li>미분류(APP·viral·'-') 제외: ${(un.rows || 0).toLocaleString()}행 · 광고비 ${C.fmt('money', un.cost || 0)}백만원 · 가입 ${(un.join || 0).toLocaleString()}명 (전체 기간)</li>
     <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
-    <li>비교: 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
+    <li>흐름 · 실적 표: 기준 기간의 연도(파란 실선)와 앞의 두 해(진회색 실선 · 회색 점선)를 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
+    <li>요약 타일 비교: 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
     <li>세로 점선: 2026-07-01 20% 앱전용 쿠폰 발행 · 2026-08-01 5,000원 웰컴백 쿠폰 앱전용 변경 (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)</li>
     ${naNote()}
     <li>원천 이상치: 쇼핑검색광고 가입 25.08 — 트래킹 공백 추정(급감 구간)</li>
@@ -1135,6 +1181,7 @@ function syncBar() {
   $id('filtRows').hidden = !S.filtOpen;
   document.querySelectorAll('[data-set]').forEach(b => b.setAttribute('aria-pressed', S[b.dataset.set] === b.dataset.v));
   $id('viewSeg').hidden = S.page !== 'trend';
+  $id('fRange').hidden = S.page === 'trend' && S.grain === 'month';   // 유형별 추이 월별 = 늘 1~12월
   $id('btnPop').textContent = ({ month: '전월', week: '전주', day: '전일' })[S.grain];
   if (!R) return;
   const ps = plist(), ai = atIndex(ps);
@@ -1204,6 +1251,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'selAt') { S.at = t.value; render(true); }
+  else if (t.id === 'trType') { S.trType = t.value; render(true); }
   else if (t.id === 'selRange') { S.range[S.grain] = t.value === 'all' ? 'all' : +t.value; render(true); }
   else if (t.id === 'fileOpen') { if (t.files[0]) openFile(t.files[0]); t.value = ''; }
   else if (t.id === 'drType') { S.drill.type = t.value; S.drill.open = []; S.drill.sel = ''; render(true); }
