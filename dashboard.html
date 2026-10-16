@@ -334,7 +334,7 @@ body.dragging .drop-empty,body.dragging main{outline:3px dashed var(--c1);outlin
       <span class="field">베이스라인 <input type="date" id="dgB0"> ~ <input type="date" id="dgB1"></span>
       <span class="field">최근 <input type="date" id="dgR0"> ~ <input type="date" id="dgR1"></span>
       <label class="field">계절 비교 연도 <select id="dgRefY"></select></label>
-      <button class="lnk" id="dgReset" type="button">기본값</button>
+      <button class="lnk" id="dgReset" type="button" title="베이스라인 7/1~전월 말, 최근 이번 달로 자동">자동(기본값)</button><span class="hint" id="dgAuto"></span>
       <button class="filt-tg" id="btnFilt2" type="button" aria-expanded="false" aria-controls="filtRows"><span class="filt-ic" aria-hidden="true">▸</span>필터<b id="filtN2" hidden></b><span class="filt-sum" id="filtSum2"></span></button>
     </div>
     <div id="filtRows" hidden>
@@ -366,15 +366,16 @@ const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용�
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
-  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 3, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
+  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 4, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'default' },
-  diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
+  diag: { b0: '2026-07-01', b1: '', r0: '', r1: '', refY: 2025, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
 };
 let S = load();
 if ((S.viewV || 0) < 2) S.view = 'split';                 // 유형별을 기본으로 바꾼 뒤 한 번만 — 이후엔 고른 보기를 기억
 if ((S.viewV || 0) < 3) S.drill.sort = 'default';         // 드릴다운 정렬 '기본'을 만든 뒤 한 번만
-S.viewV = 3;
+if ((S.viewV || 0) < 4) { S.diag.b1 = ''; S.diag.r0 = ''; S.diag.r1 = ''; }   // 진단 구간을 자동으로 바꾼 뒤 한 번만
+S.viewV = 4;
 let P = null, R = null;  // 백업 · 로우 데이터셋
 const cache = {};
 
@@ -1263,16 +1264,27 @@ function dgValid() { return null; }   // 모든 날짜 사용
 function dgLastOk() { return R.dates[R.dates.length - 1]; }
 function dgYears() { return [...new Set(R.dates.map(d => +d.slice(0, 4)))]; }
 function dgWhere() { return { ...(srcWhere() || {}), t: new Set(selTypes()) }; }
+// 비교 구간 — 칸을 비워 두면 자동: 최근 = 데이터 마지막 날이 속한 달 1일 ~ 마지막 날, 베이스라인 = 2026-07-01 ~ 그 전월 말일
+//  (예: 11/3까지 있으면 베이스라인 7/1~10/31 vs 최근 11/1~11/3). 날짜를 직접 고치면 그 칸만 고정, '자동(기본값)'으로 되돌리기
+function dgDates() {
+  const F = S.diag, last = dgLastOk();
+  const r0 = F.r0 || last.slice(0, 8) + '01';
+  const r1 = F.r1 && F.r1 <= last ? F.r1 : last;
+  const b1 = F.b1 || C.iso(C.dnum(r0) - 1);
+  let b0 = F.b0 || '2026-07-01';
+  if (b0 > b1) b0 = b1.slice(0, 8) + '01';            // 베이스라인 시작이 끝보다 늦으면 그 전월 한 달로
+  return { b0, b1, r0, r1, auto: !F.b1 && !F.r0 && !F.r1 };
+}
 function dgRanges() {
-  const F = S.diag, valid = dgValid();
-  const r1 = F.r1 && F.r1 <= dgLastOk() ? F.r1 : dgLastOk();
-  const curY = +F.r0.slice(0, 4), dy = curY - F.refY;
+  const F = S.diag, DT = dgDates(), valid = dgValid();
+  const r1 = DT.r1;
+  const curY = +DT.r0.slice(0, 4), dy = curY - F.refY;
   const sh = d => C.sameDateIn(d, +d.slice(0, 4) - dy);
   return {
     valid, r1, curY,
-    base: C.rangeIdx(R, F.b0, F.b1, valid), recent: C.rangeIdx(R, F.r0, r1, valid),
-    refBase: C.rangeIdx(R, sh(F.b0), sh(F.b1), valid), refRecent: C.rangeIdx(R, sh(F.r0), sh(r1), valid),
-    refLbl: [sh(F.b0), sh(F.b1), sh(F.r0), sh(r1)],
+    base: C.rangeIdx(R, DT.b0, DT.b1, valid), recent: C.rangeIdx(R, DT.r0, r1, valid),
+    refBase: C.rangeIdx(R, sh(DT.b0), sh(DT.b1), valid), refRecent: C.rangeIdx(R, sh(DT.r0), sh(r1), valid),
+    refLbl: [sh(DT.b0), sh(DT.b1), sh(DT.r0), sh(r1)],
   };
 }
 function compo(idx) {
@@ -1296,7 +1308,7 @@ function renderDiag(main) {
     main.innerHTML = `<div class="card pad warn" style="margin-top:24px">이 백업에는 '지표_총결제고객수'(구매고객)가 없어 첫구매 진단을 할 수 없습니다. 원천 파일로 백업을 다시 만들어 주세요.</div>`;
     return;
   }
-  const F = S.diag, rg = dgRanges(), src = P.source.row || {};
+  const F = S.diag, DT = dgDates(), rg = dgRanges(), src = P.source.row || {};
   const series = C.daily(R, { where: dgWhere() }).get('_') || C.addSeries([], C.ROW_METS, R.dates.length);
   const bl = C.baseline(R, series, rg), rows = bl.rows;
   const filt = filterSummary() || '광고 전체';
@@ -1305,7 +1317,7 @@ function renderDiag(main) {
   let h = `<section><div class="sec-h"><h2>원천 · 구간</h2><span class="desc">로우 시트 · ${esc(src.file || '')}</span></div>
     <div class="card pad${hasRef ? '' : ' warn'}"><ul class="notes">
     <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')}</li>
-    <li>베이스라인 ${ymd(F.b0)}~${ymd(F.b1)} ${compo(rg.base)} → 최근 ${ymd(F.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
+    <li>베이스라인 ${ymd(DT.b0)}~${ymd(DT.b1)} ${compo(rg.base)} → 최근 ${ymd(DT.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
     <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
       : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절 기대치를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
     <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}</ul></div></section>`;
@@ -1372,7 +1384,7 @@ function renderDiag(main) {
   renderDgComp(rg);
 }
 function renderDgMonthly(rg, s) {
-  const F = S.diag, curY = rg.curY, valid = rg.valid;
+  const F = S.diag, DT = dgDates(), curY = rg.curY, valid = rg.valid;
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const lastOk = dgLastOk(), lastY = +lastOk.slice(0, 4), lastM = +lastOk.slice(5, 7), lastD = +lastOk.slice(8, 10);
   const partialM = lastY === curY && lastD < C.monthDays(lastY, lastM) ? lastM : 0;
@@ -1433,7 +1445,7 @@ function renderDgTree(rg) {
 }
 function seasonList() { return S.diag.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
 function renderDgComp(rg) {
-  const F = S.diag, dim = F.compDim, season = new Set(seasonList());
+  const F = S.diag, DT = dgDates(), dim = F.compDim, season = new Set(seasonList());
   const where = { ...dgWhere(), ...(F.compType ? { t: new Set([F.compType]) } : {}) };
   const t = C.tree(R, { where, dims: [dim], sets: [rg.base, rg.recent], mets: ['buy', 'fp'] });
   const d = t.days;
@@ -1466,7 +1478,7 @@ function renderDgComp(rg) {
   const s = C.daily(R, { where, group: i => season.has(vals[col[i]]) ? 's' : 'o' });
   const nd = R.dates.length, Ss = s.get('s') || C.addSeries([], C.ROW_METS, nd), So = s.get('o') || C.addSeries([], C.ROW_METS, nd);
   const months = [];
-  let y = +F.b0.slice(0, 4), m = +F.b0.slice(5, 7);
+  let y = +DT.b0.slice(0, 4), m = +DT.b0.slice(5, 7);
   const endKey = rg.r1.slice(0, 7);
   while (`${y}-${String(m).padStart(2, '0')}` <= endKey && months.length < 24) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
   const cols = months.map(([yy, mm]) => {
@@ -1511,9 +1523,9 @@ function syncBar() {
   }
   if (isDg) {
     const F = S.diag;
-    $id('dgB0').value = F.b0; $id('dgB1').value = F.b1; $id('dgR0').value = F.r0; $id('dgR1').value = F.r1 || dgLastOk();
-    const ys = dgYears().filter(y => y !== +F.r0.slice(0, 4));
-    if (!ys.includes(F.refY) && ys.length) F.refY = ys.includes(+F.r0.slice(0, 4) - 1) ? +F.r0.slice(0, 4) - 1 : ys[ys.length - 1];
+    const DT = dgDates(); $id('dgB0').value = DT.b0; $id('dgB1').value = DT.b1; $id('dgR0').value = DT.r0; $id('dgR1').value = DT.r1; $id('dgAuto').textContent = DT.auto ? '자동: 베이스라인 7/1~전월 말 · 최근 이번 달 1일~마지막 날' : '';
+    const ys = dgYears().filter(y => y !== +DT.r0.slice(0, 4));
+    if (!ys.includes(F.refY) && ys.length) F.refY = ys.includes(+DT.r0.slice(0, 4) - 1) ? +DT.r0.slice(0, 4) - 1 : ys[ys.length - 1];
     $id('dgRefY').innerHTML = (ys.length ? ys : [F.refY]).map(y => `<option${y === F.refY ? ' selected' : ''}>${y}</option>`).join('');
   }
 }
