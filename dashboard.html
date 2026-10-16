@@ -210,6 +210,10 @@ table.tg tbody tr:not(.grp):hover td,table.tg tbody tr:not(.grp):hover th.stick{
 .tip .ry{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;white-space:nowrap}
 .tip .ry span:first-child{display:inline-flex;align-items:center;gap:5px;color:var(--ink-2)}
 .tip .ry span:last-child{text-align:right}
+.lgb{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+.lgb[aria-pressed="false"]{color:var(--muted);background:transparent;text-decoration:line-through}
+.lgb[aria-pressed="false"] .ky{opacity:.35}
+.lgb:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
 .tr-pick{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:-2px 0 10px}
 .ky,.cc-b svg.ky{flex:none;vertical-align:middle;display:inline-block;width:16px;overflow:visible}
 .cc-v .cc-d{margin-left:auto;font-size:12px;color:var(--muted)}
@@ -312,7 +316,7 @@ const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용�
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
-  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 3, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', at: '', range: { month: 'all', week: 26, day: 60 },
+  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 3, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'default' },
   da: { metric: 'join', media: null, kakao: true },
@@ -683,12 +687,13 @@ function renderTrend(main) {
   const who = (tt === C.TOTAL ? (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 ${types.length}개 유형 합계`) : tt) + (filt ? ' · ' + filt : '');
   let h = `<section><div class="sec-h"><h2>실적 요약</h2><span class="desc">${X.custom ? '실적기간 ' : ''}${esc(X.curTip)}${!X.custom && at.partial ? ' 진행 중' : ''} · ${modeN} · ${esc(who)} · ${X.label}: ${esc(X.prevTip)} 대비</span></div><div class="tiles" id="tiles"></div></section>`;
 
-  const lg = keys.map((y, k) => `<span>${keySvg(styles[k])}${esc(Y.custom ? `${yName(y)} ${y === 'c' ? rangeTxt(Y.cu.c0, Y.cu.c1) : rangeTxt(Y.cu.p0, Y.cu.p1)}` : yName(y))}</span>`).join('');
+  const hid = new Set(S.yearHide || []);
+  const lg = keys.map((y, k) => `<button type="button" class="lgb" data-yh="${B - k}" aria-pressed="${!hid.has(B - k)}" title="눌러서 그래프에 보이기 · 숨기기">${keySvg(styles[k])}${esc(Y.custom ? `${yName(y)} ${y === 'c' ? rangeTxt(Y.cu.c0, Y.cu.c1) : rangeTxt(Y.cu.p0, Y.cu.p1)}` : yName(y))}</button>`).join('');
   const pick = split
     ? `<div class="seg" role="group" aria-label="지표">${C.METRICS.map(m => `<button data-set="trMetric" data-v="${m.k}" aria-pressed="${m === met}">${m.n}</button>`).join('')}</div>
        <div class="seg" role="group" aria-label="세로 눈금"><button data-set="trScale" data-v="own" aria-pressed="${S.trScale !== 'same'}" title="그래프마다 눈금을 따로 — 모양(흐름) 비교">개별 눈금</button><button data-set="trScale" data-v="same" aria-pressed="${S.trScale === 'same'}" title="모든 그래프 눈금을 같게 — 크기 비교">같은 눈금</button></div>`
     : `<label class="field">광고유형 <select id="trType">${[C.TOTAL, ...types].map(t => `<option value="${esc(t)}"${t === S.trType ? ' selected' : ''}>${esc(tName(t))}</option>`).join('')}</select></label>`;
-  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${Y.custom ? `실적기간 vs 비교기간을 같은 순서의 날짜끼리 (${Y.unitN}) · 숫자는 기간 전체` : (S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일') + ' · 음영 = 기준 기간'} · 세로 점선 = 쿠폰 정책 변경</span><div class="lg">${lg}</div></div>
+  h += `<section><div class="sec-h"><h2>${Y.custom ? '선택 기간 ' + grainN : grainN} 흐름 · ${split ? esc(met.n) + ' 광고유형별' : esc(tName(S.trType))}</h2><span class="desc">${modeN} · ${Y.custom ? `실적기간 vs 비교기간을 같은 순서의 날짜끼리 (${Y.unitN}) · 숫자는 기간 전체` : (S.grain === 'month' ? '1~12월' : '주 · 일은 364일 전 같은 요일') + ' · 음영 = 기준 기간'} · 세로 점선 = 쿠폰 정책 변경 · 오른쪽 연도를 눌러 켜고 끄기</span><div class="lg">${lg}</div></div>
     <div class="tr-pick">${pick}</div>
     <div class="charts" id="trCharts">${cards.map((c, k) => {
       const tot = Y.custom ? [periodVal(c.m, TS[c.t], X.prev), periodVal(c.m, TS[c.t], X.cur)] : c.v.map(a => a[focus]);
@@ -720,13 +725,13 @@ function renderTrend(main) {
   // 같은 눈금: 모든 카드의 값 범위를 합쳐 하나로
   let yr = null;
   if (split && S.trScale === 'same') {
-    const all = cards.flatMap(c => c.v.flat()).map(v => C.scaled(met.kind, v)).filter(v => v != null && isFinite(v));
+    const all = cards.flatMap(c => c.v.filter((_, j) => !hid.has(B - j)).flat()).map(v => C.scaled(met.kind, v)).filter(v => v != null && isFinite(v));
     if (all.length) yr = [Math.min(...all), Math.max(...all)];
   }
   const labels = slots.map(s => s.label);
   cards.forEach((c, k) => yearChart($id('trc-' + k), {
     m: c.m, labels, focus, marks: Y.marks, yr, unit: unitS(c.m), cmps,
-    lines: keys.map((y, j) => ({ name: yName(y), ...styles[j], vals: c.v[j], tips: slots.map(s => s.tips[y]) })),
+    lines: keys.map((y, j) => ({ name: yName(y), ...styles[j], off: hid.has(B - j), vals: c.v[j], tips: slots.map(s => s.tips[y]) })),
   }));
 
   // 실적 표 — 선택 비교면 맨 앞에 '기간 전체' 열
@@ -763,18 +768,19 @@ function renderTrend(main) {
   const wrap = tbl.parentElement, th = tf == null ? null : block ? tbl.querySelectorAll('thead tr.h2 th')[tf] : tbl.querySelectorAll('thead th')[tf + 1];
   wrap.scrollLeft = th && !Y.custom ? Math.max(0, th.offsetLeft + th.offsetWidth - wrap.clientWidth + 40) : 0;
 }
+const keysCount = () => (S.cmp === 'custom' ? 2 : 3);   // 모두 숨기지는 못하게
 const keySvg = st => `<svg class="ky" width="16" height="6" aria-hidden="true"><line x1="1" y1="3" x2="15" y2="3" stroke="${st.color}" stroke-width="2"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}/></svg>`;
 
 // 연도 겹친 선 그래프 — lines = [y0-2, y0-1, y0] · 끝값 라벨은 기준 연도 · 툴팁에 세 해 값과 전년비
 function yearChart(host, o) {
   const mk = o.m, kind = mk.kind;
   const W = Math.max(240, Math.floor(host.clientWidth)), H = 184;
-  const L = 44, Rr = 10, T = 16, B = 24, pw = W - L - Rr, ph = H - T - B, n = o.labels.length, SR = o.lines, base = SR[SR.length - 1], cmpL = o.cmps || [{ j: SR.length - 2, label: '전년비' }];
+  const L = 44, Rr = 10, T = 16, B = 24, pw = W - L - Rr, ph = H - T - B, n = o.labels.length, SR = o.lines, VIS = SR.filter(sr => !sr.off).length ? SR.filter(sr => !sr.off) : SR, base = SR[SR.length - 1], lab = VIS[VIS.length - 1], cmpL = o.cmps || [{ j: SR.length - 2, label: '전년비' }];
   const sv = v => { const x = C.scaled(kind, v); return x == null || !isFinite(x) ? null : x; };
   const okv = v => sv(v) != null;
   let vmin = Infinity, vmax = -Infinity;
   if (o.yr) [vmin, vmax] = o.yr;
-  else for (const sr of SR) for (const v of sr.vals) { const x = sv(v); if (x != null) { vmin = Math.min(vmin, x); vmax = Math.max(vmax, x); } }
+  else for (const sr of VIS) for (const v of sr.vals) { const x = sv(v); if (x != null) { vmin = Math.min(vmin, x); vmax = Math.max(vmax, x); } }
   if (vmin === Infinity) { host.innerHTML = '<div class="nodata">데이터 없음</div>'; return; }
   const sp = vmax - vmin > Math.abs(vmax) * 1e-6 ? vmax - vmin : (Math.abs(vmax) * 0.1 || 1);
   let lo = vmin - sp * 0.12; const hi = vmax + sp * 0.12;
@@ -799,14 +805,14 @@ function yearChart(host, o) {
   for (const e of o.marks || []) s += `<line class="evl" x1="${X(e.i)}" x2="${X(e.i)}" y1="${T}" y2="${T + ph}"/>`;
   const path = arr => { let d = '', pen = false; arr.forEach((v, i) => { if (!okv(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(v).toFixed(1); pen = true; }); return d; };
   const many = n > 16;
-  for (const sr of SR) {
+  for (const sr of VIS) {
     s += `<path class="ln" style="stroke:${sr.color};stroke-width:${sr.w}${sr.dash ? `;stroke-dasharray:${sr.dash}` : ''}" d="${path(sr.vals)}"/>`;
-    s += sr.vals.map((v, i) => okv(v) && ((sr === base && !many) || (!okv(sr.vals[i - 1]) && !okv(sr.vals[i + 1]))) ? `<circle class="dot" style="fill:${sr.color}" cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${sr === base ? 3.5 : 2.5}"/>` : '').join('');
+    s += sr.vals.map((v, i) => okv(v) && ((sr === lab && !many) || (!okv(sr.vals[i - 1]) && !okv(sr.vals[i + 1]))) ? `<circle class="dot" style="fill:${sr.color}" cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${sr === lab ? 3.5 : 2.5}"/>` : '').join('');
   }
-  let li = -1; base.vals.forEach((v, i) => { if (okv(v)) li = i; });
+  let li = -1; lab.vals.forEach((v, i) => { if (okv(v)) li = i; });   // 끝값 라벨 = 보이는 계열 중 최신
   if (li >= 0) {
-    const e = { x: X(li), y: Y(base.vals[li]) }, anchor = e.x > W - Rr - 40 ? 'end' : (e.x < L + 40 ? 'start' : 'middle');
-    s += `<circle class="dot" style="fill:${base.color}" cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="4"/><text class="endl" x="${e.x.toFixed(1)}" y="${(e.y - 9).toFixed(1)}" text-anchor="${anchor}">${C.fmt(kind, base.vals[li])}</text>`;
+    const e = { x: X(li), y: Y(lab.vals[li]) }, anchor = e.x > W - Rr - 40 ? 'end' : (e.x < L + 40 ? 'start' : 'middle');
+    s += `<circle class="dot" style="fill:${lab.color}" cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="4"/><text class="endl" x="${e.x.toFixed(1)}" y="${(e.y - 9).toFixed(1)}" text-anchor="${anchor}">${C.fmt(kind, lab.vals[li])}</text>`;
   }
   s += `<line class="guide" x1="0" x2="0" y1="${T}" y2="${T + ph}" visibility="hidden"/>`;
   SR.forEach((sr, k) => { s += `<circle class="dot hs" style="fill:${sr.color}" r="4" visibility="hidden"/>`; });
@@ -822,11 +828,11 @@ function yearChart(host, o) {
   const show = i => {
     cur = i;
     guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.setAttribute('visibility', 'visible');
-    SR.forEach((sr, k) => { const el = hs[k], v = sr.vals[i]; if (okv(v)) { el.setAttribute('cx', X(i)); el.setAttribute('cy', Y(v)); el.setAttribute('visibility', 'visible'); } else el.setAttribute('visibility', 'hidden'); });
+    SR.forEach((sr, k) => { const el = hs[k], v = sr.vals[i]; if (okv(v) && VIS.includes(sr)) { el.setAttribute('cx', X(i)); el.setAttribute('cy', Y(v)); el.setAttribute('visibility', 'visible'); } else el.setAttribute('visibility', 'hidden'); });
     const ds = cmpL.map(q => ({ ...fmtD(base.vals[i], SR[q.j].vals[i], mk.lowerBetter), label: q.label }));
     const evs = (o.marks || []).filter(e => e.i === i).map(e => `<div class="ev">▲ ${esc(e.date.slice(5).replace('-', '/'))} ${esc(e.label)}</div>`).join('');
     tip.innerHTML = `<b>${esc(o.labels[i])} <span class="hint">${esc(o.unit)}</span></b>`
-      + [...SR].reverse().map(sr => `<div class="ry"><span>${keySvg(sr)}${esc(sr.name)}</span><span class="hint">${esc(sr.tips[i] || '')}</span><span>${C.fmt(kind, sr.vals[i])}</span></div>`).join('')
+      + [...VIS].reverse().map(sr => `<div class="ry"><span>${keySvg(sr)}${esc(sr.name)}</span><span class="hint">${esc(sr.tips[i] || '')}</span><span>${C.fmt(kind, sr.vals[i])}</span></div>`).join('')
       + ds.map((d, k) => `<div class="ry${k ? '' : ' d'}"><span>${d.label}</span><span></span><span class="${d.c}">${d.t}</span></div>`).join('') + evs;
     tip.hidden = false;
     const tw = tip.offsetWidth, x = X(i) / W * svg.getBoundingClientRect().width;
@@ -1302,6 +1308,7 @@ document.addEventListener('click', e => {
   const ds = t.dataset;
   if (ds.page) { S.page = ds.page; render(); window.scrollTo(0, 0); return; }
   if (ds.set) { S[ds.set] = ds.v; if (ds.set === 'grain') S.at = ''; render(true); return; }
+  if (ds.yh != null) { const h = new Set(S.yearHide || []), k = +ds.yh; h.has(k) ? h.delete(k) : h.add(k); if ([...h].filter(x => x < keysCount()).length < keysCount()) { S.yearHide = [...h]; render(true); } return; }
   if (ds.hide) { const h = new Set(S.hidden[ds.hide] || []); h.has(ds.t) ? h.delete(ds.t) : h.add(ds.t); S.hidden[ds.hide] = [...h]; render(true); return; }
   if (ds.type) { let ts = new Set(selTypes()); ts.has(ds.type) ? ts.delete(ds.type) : ts.add(ds.type); if (!ts.size) ts = new Set([ds.type]); S.types = ts.size === R.dims.t.length ? null : [...ts]; render(true); return; }
   if (ds.src != null && t.closest('#srcChips')) { let ss = new Set(S.srcs || R.dims.src); ss.has(ds.src) ? ss.delete(ds.src) : ss.add(ds.src); if (!ss.size) ss = new Set([ds.src]); S.srcs = ss.size === R.dims.src.length ? null : [...ss]; render(true); return; }
