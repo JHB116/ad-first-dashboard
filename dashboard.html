@@ -290,13 +290,14 @@ const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용�
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
-  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'total', at: '', range: { month: 'all', week: 26, day: 60 },
+  page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 2, at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'cost' },
   da: { metric: 'join', media: null, kakao: true },
   diag: { b0: '2026-07-01', b1: '2026-09-30', r0: '2026-10-01', r1: '', refY: 2025, dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
 };
 let S = load();
+if (S.viewV !== 2) { S.view = 'split'; S.viewV = 2; }   // 유형별을 기본으로 바꾼 뒤 한 번만 — 이후엔 고른 보기를 기억
 let P = null, R = null;  // 백업 · 로우 데이터셋
 const cache = {};
 
