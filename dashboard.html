@@ -224,6 +224,55 @@ table.tg tr.r-yoy th.yl{color:var(--muted);font-weight:400;padding-left:32px}
 table.tg tr.r-y1 td,table.tg tr.r-y1 th{border-bottom-color:transparent}
 table.tg tr.r-prev th.stick{color:var(--ink-2);font-weight:400}
 
+/* 메모 (첫구매 실적 대시보드와 같은 모양) */
+.insight{margin-top:14px;border:1px solid var(--grid);border-radius:10px;background:var(--surface)}
+.insight>summary{cursor:pointer;padding:10px 14px;font-size:13px;font-weight:650}
+.ins-sub{font-weight:400;font-size:11.5px;color:var(--muted);margin-left:8px}
+.ins-body{padding:2px 14px 14px;border-top:1px solid var(--grid)}
+.btn.primary{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.memo-tb{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin-bottom:6px}
+.memo-tb button{border:0;background:none;color:inherit;cursor:pointer;border-radius:4px;padding:2px 6px;font-size:12px;line-height:1.4}
+.memo-tb button:hover{background:var(--wash);color:var(--ink)}
+.memo-tb button[data-memocmd="bold"]{font-weight:800}
+.memo-tb button[data-memocmd="underline"]{text-decoration:underline}
+.memo-tb button[data-memocmd="strikeThrough"]{text-decoration:line-through}
+.memo-tb .ink{font-weight:700}
+.memo-tb .hl{width:15px;height:15px;border:1px solid var(--border);padding:0}
+.memo-tb .sep{width:1px;height:14px;background:var(--grid);margin:0 4px}
+.memo-tb .dot{width:14px;height:14px;border-radius:50%;border:1px solid var(--border);padding:0}
+.memo-tb .dot[aria-pressed="true"]{box-shadow:0 0 0 2px var(--surface),0 0 0 3px var(--ink-2)}
+.memo-in{min-height:96px;max-height:280px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;line-height:1.6;outline:0}
+.memo-in:focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--c1) 45%,transparent)}
+.memo-t ul,.memo-in ul{margin:4px 0;padding-left:18px}
+.memo-h{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin:10px 0}
+.memos{display:flex;flex-direction:column;gap:8px}
+.memo-empty{font-size:12px;color:var(--muted);padding:2px 0}
+.memo-item{--mc:var(--c4);border:1px solid var(--grid);border-left:3px solid var(--mc);border-radius:8px;background:var(--surface);padding:10px 12px;font-size:12.5px;color:var(--ink)}
+.memo-item[data-c="pink"]{--mc:var(--c5)}
+.memo-item[data-c="blue"]{--mc:var(--c1)}
+.memo-item[data-c="green"]{--mc:var(--c3)}
+.memo-item.now{background:var(--wash);border-color:color-mix(in srgb,var(--c1) 30%,var(--grid))}
+.memo-item.edit{background:var(--surface-2)}
+.memo-t{white-space:pre-wrap;word-break:break-word;line-height:1.65}
+.memo-f{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:11px;color:var(--muted)}
+.memo-pin{max-width:min(100%,460px);border:1px solid var(--border);background:var(--surface-2);color:var(--ink-2);border-radius:999px;padding:2px 9px;font-size:11px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memo-pin:hover{color:var(--ink);border-color:var(--axis)}
+.memo-time{margin-left:auto;font-variant-numeric:tabular-nums}
+.memo-f button:not(.memo-pin){border:0;background:none;color:var(--muted);cursor:pointer;padding:2px 7px;border-radius:5px;font-size:11.5px}
+.memo-f button:not(.memo-pin):hover{background:var(--wash);color:var(--ink)}
+.memo-f button.del-arm{background:var(--neg);color:#fff}
+.memo-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.memo-cols.one{grid-template-columns:1fr}
+.memo-col{min-width:0;display:flex;flex-direction:column;gap:4px}
+.memo-cap{font-size:11px;font-weight:650;color:var(--ink-2)}
+.memo-cap small{font-weight:400;color:var(--muted);margin-left:4px}
+@media screen and (max-width:760px){.memo-cols{grid-template-columns:1fr}}
+.memo-when{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0}
+.memo-when select{font-size:12px;max-width:230px}
+.memo-cs{display:flex;gap:6px;align-items:center;margin-top:8px}
+.memo-cs .sp{margin-left:auto}
+.memo-cs .btn{padding:3px 9px}
+
 /* 빈 화면 · 끌어다 놓기 */
 .drop-empty{margin:60px auto;max-width:640px;text-align:center;padding:40px 24px;border:2px dashed var(--axis);border-radius:14px;background:var(--surface)}
 .drop-empty h2{margin:0 0 8px;font-size:18px}
@@ -345,7 +394,7 @@ async function idbDel() { try { const db = await idb(); await new Promise(res =>
 
 async function downloadBackup() {
   if (!P) return;
-  const blob = new Blob([JSON.stringify(P)]);
+  const blob = new Blob([JSON.stringify({ ...P, memos: MEMOS.all() })]);
   const gz = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(gz); a.download = `광고신규대시보드_백업_${(P.lastDate || '').replace(/-/g, '')}.json.gz`; a.click();
@@ -364,12 +413,15 @@ async function readBackup(file) {
 }
 // 새 백업을 이 브라우저에 저장된 데이터에 합친다 — 새 백업에 있는 날짜는 교체, 나머지 날짜(예: 2024년)는 그대로
 async function mergeAndStore(add) {
+  const nMemo = MEMOS.mergeIn(add && add.memos);   // 백업에 담긴 메모를 이 브라우저 메모에 합친다
+  if (add) delete add.memos;
   const base = await idbGet();
   const merged = C.mergeBackup(base, add);
   const stored = await idbPut(merged);
   use(merged);
   const m = merged.merged, r = merged.source.row;
   toast(m ? `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일 → ${r.from} ~ ${r.to}` : `저장했습니다 · ${r.from} ~ ${r.to}`);
+  if (nMemo) setTimeout(() => toast(`백업의 메모 ${nMemo}개를 합쳤습니다`), 300);
   if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 사라집니다 — 백업 내려받기로 받아 두세요');
 }
 async function openFile(file) {
@@ -709,8 +761,9 @@ function renderTrend(main) {
     <div class="tools"><div class="seg" role="group" aria-label="표 형태"><button data-set="layout" data-v="block" aria-pressed="${S.layout === 'block'}">엑셀형</button><button data-set="layout" data-v="stack" aria-pressed="${S.layout !== 'block'}">연도별 행</button></div>
     <button class="btn" data-csv-for="trTbl" data-name="추이_${grainN}">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid tg" id="trTbl"></table></div></section>`;
-  h += notesTrend();
+  h += memoSection() + notesTrend();
   main.innerHTML = h;
+  renderMemos();
 
   $id('tiles').innerHTML = C.METRICS.map(m => {
     const v = periodVal(m, T, X.cur), c = periodVal(m, T, cmpAt), o = periodVal(m, T, othAt);
@@ -851,6 +904,239 @@ function yearChart(host, o) {
     show(Math.max(0, Math.min(n - 1, (cur < 0 ? Math.max(0, li) : cur) + (ev.key === 'ArrowLeft' ? -1 : 1))));
   });
 }
+// ════════════════════════════════════════════════════════════════════
+// 메모 — 첫구매 실적 대시보드와 같은 방식. 이 브라우저(localStorage)에 저장, 백업 내려받기에 함께 담고 백업을 열면 합친다
+// ════════════════════════════════════════════════════════════════════
+const MEMO_KEY = 'ad-new-dashboard-memos';
+let MEMO_MEM = null;   // 저장소를 못 쓰면 이 창에만
+const memoOk = m => !!m && typeof m.id === 'string' && m.id.length < 60 && typeof m.text === 'string';
+const memoRead = () => {
+  if (MEMO_MEM) return MEMO_MEM;
+  try { const x = JSON.parse(localStorage.getItem(MEMO_KEY) || '[]'); MEMO_MEM = Array.isArray(x) ? x.filter(memoOk) : []; } catch (e) { MEMO_MEM = []; }
+  return MEMO_MEM;
+};
+const memoWrite = list => { MEMO_MEM = list; try { localStorage.setItem(MEMO_KEY, JSON.stringify(list)); } catch (e) { /* 저장소 사용 불가 */ } };
+const MEMOS = {
+  all: () => memoRead().map(m => ({ ...m })),
+  add: m => memoWrite([...memoRead(), m]),
+  update: (id, patch) => memoWrite(memoRead().map(m => (m.id === id ? { ...m, ...patch } : m))),
+  remove: id => memoWrite(memoRead().filter(m => m.id !== id)),
+  mergeIn: list => {   // 같은 메모는 최근 수정본
+    if (!Array.isArray(list)) return 0;
+    const cur = new Map(memoRead().map(m => [m.id, m]));
+    let n = 0;
+    for (const m of list) {
+      if (!memoOk(m)) continue;
+      const o = cur.get(m.id);
+      if (!o || String(m.updated || '') > String(o.updated || '')) { cur.set(m.id, { ...m, text: m.text.slice(0, 2000) }); n++; }
+    }
+    if (n) memoWrite([...cur.values()]);
+    return n;
+  },
+};
+const MEMO_COLORS = [['yellow', '노랑', 'c4'], ['pink', '분홍', 'c5'], ['blue', '파랑', 'c1'], ['green', '초록', 'c3']];
+const MEMO_TOOLS = [['bold', '굵게 (Ctrl+B)', '가'], ['underline', '밑줄 (Ctrl+U)', '가'], ['strikeThrough', '취소선', '가'], ['insertUnorderedList', '목록', '•'], ['removeFormat', '서식 지우기', '⌫']];
+const MEMO_INK = [['#d03b3b', '빨강'], ['#2a78d6', '파랑'], ['#006300', '초록'], ['', '기본색']];
+const MEMO_HL = [['#fff3a3', '노랑 형광'], ['#cfe8ff', '파랑 형광'], ['', '형광 없음']];
+const MEMO_TAGS = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, MARK: 1, SPAN: 1, DIV: 1, BR: 1, UL: 1, OL: 1, LI: 1, P: 1, FONT: 1 };
+const MEMO_PANES = [['a', '리뷰', '무슨 일이 있었나'], ['b', '계획', '무엇을 할까']];
+function memoClean(html) {   // 저장 · 표시 전에 허용한 태그와 색만 남긴다
+  const box = document.createElement('div');
+  box.innerHTML = String(html || '');
+  for (const el of [...box.querySelectorAll('*')].reverse()) {
+    if (!MEMO_TAGS[el.tagName]) { el.replaceWith(...el.childNodes); continue; }
+    const color = el.style ? el.style.color : '', bg = el.style ? el.style.backgroundColor : '', fc = el.getAttribute('color');
+    for (const a of [...el.attributes]) el.removeAttribute(a.name);
+    if (color) el.style.color = color;
+    if (bg) el.style.backgroundColor = bg;
+    if (fc && el.tagName === 'FONT') el.setAttribute('color', fc);
+  }
+  return box.innerHTML;
+}
+let MEMO_FILTER = 'all', MEMO_EDIT = null, MEMO_DRAFT = { html: '', html2: '', color: 'yellow', grain: 'month', at: '' }, MEMO_FOCUS = false, MEMO_DEL = null, MEMO_DEL_T = 0, MEMO_PANE = 'a', MEMO_OPEN = false;
+const memoBox = p => document.querySelector(`#memoList .memo-in[data-pane="${p}"]`);
+function memoSyncDraft() {   // 편집 중인 글을 초안에 담아 둔다 (화면을 다시 그려도 남게)
+  const a = memoBox('a'), b = memoBox('b');
+  if (a) MEMO_DRAFT.html = a.innerHTML;
+  if (b) MEMO_DRAFT.html2 = b.innerHTML;
+  const d = $id('memoBox'); if (d) MEMO_OPEN = d.open;
+}
+const memoPlain = el => (el ? (el.innerText || el.textContent || '') : '').replace(/ /g, ' ').trim();
+const memoStrip = s => String(s || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/ /g, ' ').trim();
+const memoHas = s => !!memoStrip(s);
+const GRAIN_N = { month: '월별', week: '주별', day: '일별' };
+const periodsOf = g => cache['p:' + g] || (cache['p:' + g] = C.periods(R, g));
+const memoSpan = (g, at) => { if (!at) return null; const p = periodsOf(g).find(x => x.key === at); return p ? [p.start, p.end] : null; };
+const memoView = (grain, at) => ({ grain, at: at || '', mode: S.mode, cmp: S.cmp === 'custom' ? 'yoy' : S.cmp, view: S.view, types: S.types ? [...S.types] : null, srcs: S.srcs ? [...S.srcs] : null });
+function memoLabel(v) {
+  const p = v.at ? periodsOf(v.grain).find(x => x.key === v.at) : null;
+  const ty = v.types ? (v.types.length <= 2 ? v.types.join('·') : `${v.types.length}개 유형`) : '전체 유형';
+  const sr = v.srcs ? ` · 비용출처 ${v.srcs.length <= 2 ? v.srcs.join('·') : v.srcs.length + '개'}` : '';
+  return `${GRAIN_N[v.grain] || ''} ${p ? p.label : '최근'} · ${ty}${sr}`;
+}
+const sameList = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+function memoMatch(v) {   // 기간이 겹치고 필터가 같으면 '이 화면' — 주별 메모도 그 주가 낀 월별 화면에서 보인다
+  if (!v || !R || !sameList(v.types, S.types) || !sameList(v.srcs, S.srcs)) return false;
+  const ps = plist(), at = ps[atIndex(ps)], ms = memoSpan(v.grain, v.at);
+  if (!ms) return !S.at && v.grain === S.grain;
+  return !!at && ms[0] <= at.end && ms[1] >= at.start;
+}
+function memoGo(v) {
+  if (!v) return;
+  S.page = 'trend';
+  if (GRAIN_N[v.grain]) S.grain = v.grain;
+  S.at = v.at || '';
+  if (['avg', 'sum'].includes(v.mode)) S.mode = v.mode;
+  if (['yoy', 'pop'].includes(v.cmp)) S.cmp = v.cmp;
+  if (['total', 'split'].includes(v.view)) S.view = v.view;
+  S.types = v.types ? v.types.filter(t => R.dims.t.includes(t)) : null; if (S.types && !S.types.length) S.types = null;
+  S.srcs = v.srcs ? v.srcs.filter(t => R.dims.src.includes(t)) : null; if (S.srcs && !S.srcs.length) S.srcs = null;
+  MEMO_OPEN = true;
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function memoSection() {
+  return `<section id="memoSec"><details class="insight" id="memoBox"${MEMO_OPEN || MEMO_EDIT ? ' open' : ''}>
+    <summary>메모<span class="ins-sub" id="memoDesc"></span></summary>
+    <div class="ins-body">
+      <div class="memo-h">
+        <div class="seg" role="group" aria-label="메모 보기"><button type="button" data-memof="all" title="저장된 메모를 모두 보기">모든 메모</button><button type="button" data-memof="view" title="지금 화면의 기간 · 광고유형 · 비용출처와 같은 조건으로 붙인 메모만 보기">이 화면 조건</button></div>
+        <button class="btn primary" type="button" id="btnMemoAdd" title="지금 보고 있는 기간 · 필터에 메모 붙이기">+ 메모</button>
+      </div>
+      <div class="memos" id="memoList"></div>
+    </div></details></section>`;
+}
+function renderMemos() {
+  if (!$id('memoSec')) return;
+  const all = MEMOS.all().sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')));
+  const here = all.filter(m => memoMatch(m.view)), list = MEMO_FILTER === 'view' ? here : all;
+  document.querySelectorAll('[data-memof]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.memof === MEMO_FILTER)));
+  $id('memoDesc').textContent = all.length
+    ? `${all.length}개 · 지금 보기에 붙은 메모 ${here.length}개 · 📌 를 누르면 그 기간 · 필터로 이동 · 이 브라우저에 저장되고 백업 파일에 함께 담김`
+    : '지금 보는 기간 · 필터에 메모를 붙여 두면 📌 로 그 보기로 돌아옵니다 · 이 브라우저에 저장되고 백업 파일에 함께 담김';
+  const tm = s => { const x = new Date(s), p2 = n => String(n).padStart(2, '0'); return isNaN(x) ? '' : `${x.getFullYear()}-${p2(x.getMonth() + 1)}-${p2(x.getDate())} ${p2(x.getHours())}:${p2(x.getMinutes())}`; };
+  const color = c => (MEMO_COLORS.some(x => x[0] === c) ? c : 'yellow');
+  const editor = id => `<div class="memo-item edit" data-c="${color(MEMO_DRAFT.color)}" data-mid="${esc(id)}">`
+    + `<div class="memo-tb" role="toolbar" aria-label="메모 서식">`
+    + MEMO_TOOLS.map(([cmd, t, l]) => `<button type="button" data-memocmd="${cmd}" title="${esc(t)}" aria-label="${esc(t)}">${l}</button>`).join('')
+    + '<span class="sep"></span>'
+    + MEMO_INK.map(([c, t]) => `<button type="button" class="ink" data-memoink="${c}" title="${esc(t)}" aria-label="${esc(t)}" style="color:${c || 'inherit'}">가</button>`).join('')
+    + MEMO_HL.map(([c, t]) => `<button type="button" class="hl" data-memohl="${c}" title="${esc(t)}" aria-label="${esc(t)}" style="background:${c || 'transparent'}"></button>`).join('')
+    + '<span class="sep"></span>'
+    + MEMO_COLORS.map(([c, nm, v]) => `<button type="button" class="dot" data-memocolor="${c}" aria-pressed="${color(MEMO_DRAFT.color) === c}" title="${nm} 표시" aria-label="${nm} 표시" style="background:var(--${v})"></button>`).join('')
+    + '</div>'
+    + `<div class="memo-when"><span class="hint">붙일 기간</span>`
+    + `<select data-memograin aria-label="기간 단위">${Object.entries(GRAIN_N).map(([g, t]) => `<option value="${g}"${MEMO_DRAFT.grain === g ? ' selected' : ''}>${t}</option>`).join('')}</select>`
+    + `<select data-memoat aria-label="기간">${['<option value="">기간 고정 안 함 (최근)</option>', ...[...periodsOf(MEMO_DRAFT.grain)].reverse()
+      .map(p => `<option value="${esc(p.key)}"${MEMO_DRAFT.at === p.key ? ' selected' : ''}>${esc(p.label)}${p.partial ? ' (진행 중)' : ''}</option>`)].join('')}</select>`
+    + `<span class="hint">광고유형 · 비용출처 필터는 지금 화면 기준</span></div>`
+    + `<div class="memo-cols">${MEMO_PANES.map(([p, nm, hint]) => `<div class="memo-col"><div class="memo-cap">${nm}<small>${hint}</small></div>`
+      + `<div class="memo-in" data-pane="${p}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${nm}">${memoClean(p === 'a' ? MEMO_DRAFT.html : MEMO_DRAFT.html2)}</div></div>`).join('')}</div>`
+    + `<div class="memo-cs"><span class="hint">Ctrl+Enter 저장 · Esc 취소</span><span class="sp"></span>`
+    + `<button class="btn" type="button" data-memocancel>취소</button><button class="btn primary" type="button" data-memosave>저장</button></div></div>`;
+  const card = m => (MEMO_EDIT === m.id ? editor(m.id) : `<div class="memo-item${memoMatch(m.view) ? ' now' : ''}" data-c="${color(m.color)}" data-mid="${esc(m.id)}">`
+    + (() => {
+      const hA = memoHas(m.html) ? memoClean(m.html) : '', hB = memoHas(m.html2) ? memoClean(m.html2) : '';
+      const col = (cap, body) => `<div class="memo-col"><div class="memo-cap">${cap}</div><div class="memo-t">${body}</div></div>`;
+      if (!hA && !hB) return `<div class="memo-cols one"><div class="memo-col"><div class="memo-t">${esc(m.text || '')}</div></div></div>`;
+      if (!hB) return `<div class="memo-cols one">${col('리뷰', hA)}</div>`;
+      if (!hA) return `<div class="memo-cols one">${col('계획', hB)}</div>`;
+      return `<div class="memo-cols">${col('리뷰', hA)}${col('계획', hB)}</div>`;
+    })()
+    + '<div class="memo-f">'
+    + (m.view ? `<button type="button" class="memo-pin" data-memogo title="${esc(`이 보기로 이동 — ${m.label || ''}`)}">📌 ${esc(m.label || '')}</button>` : '')
+    + `<span class="memo-time">${tm(m.updated || m.created)}</span>`
+    + '<button type="button" data-memoedit title="고치기">고치기</button>'
+    + (MEMO_DEL === m.id ? '<button type="button" class="del-arm" data-memodel>지울까요?</button>' : '<button type="button" data-memodel title="지우기">지우기</button>')
+    + '</div></div>');
+  const empty = MEMO_FILTER === 'view' && all.length ? '지금 보기에 붙은 메모가 없습니다 — 모든 메모를 누르면 전체' : '메모가 없습니다 — + 메모 로 추가';
+  $id('memoList').innerHTML = (MEMO_EDIT === 'new' ? editor('new') : '') + (list.length ? list.map(card).join('') : MEMO_EDIT === 'new' ? '' : `<div class="memo-empty">${empty}</div>`);
+  if (MEMO_FOCUS) {   // 새 메모 · 고치기를 누르면 바로 쓸 수 있게 커서를 끝으로
+    const box = memoBox(MEMO_PANE) || memoBox('a');
+    if (box) { box.focus(); const r = document.createRange(); r.selectNodeContents(box); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    MEMO_FOCUS = false;
+  }
+}
+function memoSave() {
+  const a = memoBox('a'), b = memoBox('b');
+  const ta = a ? memoPlain(a) : memoStrip(MEMO_DRAFT.html), tb = b ? memoPlain(b) : memoStrip(MEMO_DRAFT.html2);
+  const html = ta ? memoClean(a ? a.innerHTML : MEMO_DRAFT.html) : '', html2 = tb ? memoClean(b ? b.innerHTML : MEMO_DRAFT.html2) : '';
+  const text = [ta, tb && `[계획] ${tb}`].filter(Boolean).join(' · ').slice(0, 2000);
+  if (!text) { toast('리뷰 또는 계획에 내용을 입력하세요'); return; }
+  const now = new Date().toISOString(), v = memoView(MEMO_DRAFT.grain, MEMO_DRAFT.at);
+  if (MEMO_EDIT === 'new') MEMOS.add({ id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, text, html, html2, color: MEMO_DRAFT.color, created: now, updated: now, view: v, label: memoLabel(v) });
+  else MEMOS.update(MEMO_EDIT, { text, html, html2, color: MEMO_DRAFT.color, updated: now, view: v, label: memoLabel(v) });
+  MEMO_EDIT = null;
+  renderMemos();
+}
+document.addEventListener('mousedown', e => { if (e.target.closest('#memoSec .memo-tb button')) e.preventDefault(); });   // 서식 버튼을 눌러도 고른 글자가 풀리지 않게
+document.addEventListener('click', e => {
+  if (!e.target.closest('#memoSec')) return;
+  const f = e.target.closest('[data-memof]');
+  if (f) { MEMO_FILTER = f.dataset.memof; renderMemos(); return; }
+  if (e.target.closest('#btnMemoAdd')) { MEMO_EDIT = 'new'; MEMO_DRAFT = { html: '', html2: '', color: 'yellow', grain: S.grain, at: S.at || '' }; MEMO_PANE = 'a'; MEMO_FOCUS = true; renderMemos(); return; }
+  const cmd = e.target.closest('[data-memocmd],[data-memoink],[data-memohl]');
+  if (cmd) {
+    const box = memoBox(MEMO_PANE) || memoBox('a');
+    if (box) {
+      box.focus();
+      try {
+        if (cmd.dataset.memocmd) document.execCommand(cmd.dataset.memocmd, false, null);
+        else if (cmd.hasAttribute('data-memoink')) document.execCommand('foreColor', false, cmd.dataset.memoink || 'inherit');
+        else document.execCommand('hiliteColor', false, cmd.dataset.memohl || 'transparent');
+      } catch (err) { toast('이 브라우저에서는 서식을 넣을 수 없습니다'); }
+      memoSyncDraft();
+    }
+    return;
+  }
+  const cardEl = e.target.closest('[data-mid]');
+  if (!cardEl) return;
+  const id = cardEl.dataset.mid;
+  const col = e.target.closest('[data-memocolor]');
+  if (col) { memoSyncDraft(); MEMO_DRAFT.color = col.dataset.memocolor; renderMemos(); return; }
+  if (e.target.closest('[data-memocancel]')) { MEMO_EDIT = null; renderMemos(); return; }
+  if (e.target.closest('[data-memosave]')) { memoSave(); return; }
+  const m = MEMOS.all().find(x => x.id === id);
+  if (!m) return;
+  if (e.target.closest('[data-memogo]')) { memoGo(m.view); return; }
+  if (e.target.closest('[data-memoedit]')) {
+    MEMO_EDIT = id;
+    MEMO_DRAFT = { html: memoHas(m.html) ? m.html : (memoHas(m.html2) ? '' : esc(m.text || '')), html2: m.html2 || '', color: m.color, grain: (m.view && m.view.grain) || S.grain, at: (m.view && m.view.at) || '' };
+    MEMO_PANE = !memoHas(m.html) && memoHas(m.html2) ? 'b' : 'a';
+    MEMO_FOCUS = true;
+    renderMemos();
+    return;
+  }
+  if (e.target.closest('[data-memodel]')) {
+    clearTimeout(MEMO_DEL_T);
+    if (MEMO_DEL === id) { MEMOS.remove(id); MEMO_DEL = null; renderMemos(); return; }   // '지울까요?' 를 다시 누름
+    let ans = null;
+    const t0 = performance.now();
+    try { ans = window.confirm(`이 메모를 지울까요?\n\n${(m.text || '').slice(0, 60)}`); } catch (err) { ans = null; }
+    const blocked = ans === false && performance.now() - t0 < 30;   // Streamlit 화면(iframe)은 확인 창이 막혀 바로 false
+    if (ans === true) { MEMOS.remove(id); MEMO_DEL = null; renderMemos(); return; }
+    if (ans === false && !blocked) return;
+    MEMO_DEL = id;   // 확인 창을 못 쓰는 곳 — 한 번 더 눌러 지우기
+    MEMO_DEL_T = setTimeout(() => { MEMO_DEL = null; renderMemos(); }, 4000);
+    renderMemos();
+  }
+});
+document.addEventListener('toggle', e => { if (e.target.id === 'memoBox') MEMO_OPEN = e.target.open; }, true);
+document.addEventListener('focusin', e => { const box = e.target.closest && e.target.closest('#memoSec .memo-in'); if (box) MEMO_PANE = box.dataset.pane || 'a'; });
+document.addEventListener('change', e => {   // 붙일 기간 고르기
+  const g = e.target.closest('#memoSec [data-memograin]'), at = e.target.closest('#memoSec [data-memoat]');
+  if (!g && !at) return;
+  memoSyncDraft();
+  if (g) { MEMO_DRAFT.grain = g.value; MEMO_DRAFT.at = ''; }
+  if (at) MEMO_DRAFT.at = at.value;
+  renderMemos();
+});
+document.addEventListener('keydown', e => {
+  if (!e.target.matches || !e.target.matches('#memoList .memo-in')) return;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); memoSave(); }
+  else if (e.key === 'Escape') { MEMO_EDIT = null; renderMemos(); }
+});
+
 const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', nrv: '순결제거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
 // 원천에 컬럼이 없어 '데이터 없음'으로 둔 지표 · 기간
 function naNote() {
@@ -1291,6 +1577,7 @@ function render(keepScroll) {
   if (!PAGES[S.page]) S.page = 'trend';
   syncBar();
   save();
+  memoSyncDraft();
   const y = window.scrollY, main = $id('main');
   try {
     PAGES[S.page](main);
