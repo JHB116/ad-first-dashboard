@@ -6,14 +6,14 @@ setlocal
 set "HERE=%~dp0"
 set PYTHONIOENCODING=utf-8
 set PY=python
-where python >/dev/null 2>/dev/null || set PY=py
-%PY% -c "import pandas, pyxlsb, openpyxl" >/dev/null 2>/dev/null || %PY% -m pip install -r "%HERE%requirements.txt"
+where python >nul 2>nul || set PY=py
+%PY% -c "import pandas, pyxlsb, openpyxl" >nul 2>nul || %PY% -m pip install -r "%HERE%requirements.txt"
 if not "%~1"=="" (
   %PY% "%HERE%build_data.py" --row %*
   goto done
 )
 if not exist "%HERE%raw" mkdir "%HERE%raw"
-dir /b "%HERE%raw\*.xlsb" "%HERE%raw\*.csv" "%HERE%raw\*.xlsx" >/dev/null 2>nul
+dir /b "%HERE%raw\*.xlsb" "%HERE%raw\*.csv" "%HERE%raw\*.xlsx" >nul 2>nul
 if errorlevel 1 (
   echo Put the raw files [xlsb / csv / xlsx] into the "raw" folder that just opened, then run this again.
   echo Or drag a raw file onto this .bat icon.

@@ -299,12 +299,20 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     """원천 → 정제 · (일자 × 차원) 합산 DataFrame, 원천에 없는 지표 키.
     덩어리마다 바로 합산해 메모리를 원천 크기의 일부만 쓴다. xlsb · csv 는 data/cache/ 에 결과를 캐시"""
     path = Path(path)
-    cache = CACHE_DIR / f'{path.name}.v2.pkl'
+    cache = CACHE_DIR / f'{path.name}.v3.pkl'
     cacheable = use_cache and path.suffix.lower() in ('.xlsb', '.csv')
-    if cacheable and cache.exists() and cache.stat().st_mtime >= path.stat().st_mtime:
-        log(f'[로우] 캐시 사용: {cache.name}')
-        c = pd.read_pickle(cache)
-        return c['df'], c['missing']
+    # 캐시는 같은 파일(크기 · 수정시각)이고 읽는 지표 목록이 같을 때만 쓴다
+    #  — 같은 이름으로 파일을 바꿔 넣거나(복사하면 수정시각이 예전 그대로일 수 있음) 지표가 늘면 다시 읽는다
+    st = path.stat()
+    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items())]
+    if cacheable and cache.exists():
+        try:
+            c = pd.read_pickle(cache)
+            if c.get('sig') == sig:
+                log(f'[로우] 캐시 사용: {cache.name}')
+                return c['df'], c['missing']
+        except Exception:   # 깨진 캐시는 무시하고 다시 읽는다
+            pass
     log(f'[로우] {path.name} 읽는 중 (큰 파일은 몇 분)…')
     mets = list(ROW_METRICS.values())
     seen = {key: False for key in mets}
@@ -324,7 +332,9 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     missing = [k for k, v in seen.items() if not v]
     if cacheable:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        pd.to_pickle({'df': df, 'missing': missing}, cache)
+        pd.to_pickle({'df': df, 'missing': missing, 'sig': sig}, cache)
+        for stale in CACHE_DIR.glob(f'{path.name}.v2.pkl'):   # 예전 형식 캐시 정리
+            stale.unlink(missing_ok=True)
     return df, missing
 
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """build_data.py — 가짜 원천으로 분류 · 집계 · 이어 붙이기를 검증 (모든 숫자는 임의값)"""
 import gzip
+import os
 import json
 
 import numpy as np
@@ -218,3 +219,20 @@ def test_is_backup(payload, tmp_path):
     c = tmp_path / 'r.csv'
     c.write_text('기간_일자,구분_광고유형\n2024-01-01,SA\n', encoding='utf-8')
     assert bd.is_backup(p) and bd.is_backup(j) and not bd.is_backup(c)
+
+
+def test_cache_refreshes_when_file_replaced_with_old_mtime(tmp_path, monkeypatch):
+    # 같은 이름의 원천을 새로 받아 덮어써도(복사로 수정시각이 예전 그대로) 예전 캐시를 쓰지 않는다
+    monkeypatch.setattr(bd, 'CACHE_DIR', tmp_path / 'cache')
+    p = tmp_path / 'row.csv'
+    small = ms.make_row('2026-09-01', '2026-09-02').drop(columns=['지표_순결제거래액'])
+    small.to_csv(p, index=False, encoding='utf-8-sig')
+    old_mtime = p.stat().st_mtime_ns
+    _, miss1 = bd.load_prepped(p)
+    assert 'nrv' in miss1
+    _, again = bd.load_prepped(p)                       # 그대로면 캐시
+    assert again == miss1
+    ms.make_row('2026-09-01', '2026-09-03').to_csv(p, index=False, encoding='utf-8-sig')
+    os.utime(p, ns=(old_mtime, old_mtime))
+    df2, miss2 = bd.load_prepped(p)
+    assert 'nrv' not in miss2 and df2['date'].nunique() == 3
