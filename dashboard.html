@@ -10,7 +10,7 @@
   color-scheme:light;
   --page:#f6f6f3; --surface:#fcfcfb; --surface-2:#efeeea; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
   --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --row-alt:rgba(11,11,11,.025);
-  --prev:#b3b1a9; --y1:#bdbbb3; --y2:#3d3c39; --neg:#d03b3b; --pos:#006300; --wash:rgba(42,120,214,.07); --ev:#a05a00;
+  --prev:#b3b1a9; --y1:#5f5e5a; --y2:#a3a19a; --neg:#d03b3b; --pos:#006300; --wash:rgba(42,120,214,.07); --ev:#a05a00;
   /* 광고유형 고유색 — 필터로 유형을 빼도 색은 그대로 */
   --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c7:#4a3aa7; --c8:#e34948;
 }
@@ -19,7 +19,7 @@
     color-scheme:dark;
     --page:#0d0d0d; --surface:#1a1a19; --surface-2:#262624; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --row-alt:rgba(255,255,255,.03);
-    --prev:#6b6a64; --y1:#5a5955; --y2:#d6d5cd; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
+    --prev:#6b6a64; --y1:#b9b8b0; --y2:#7d7c75; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
     --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
   }
 }
@@ -27,7 +27,7 @@
   color-scheme:dark;
   --page:#0d0d0d; --surface:#1a1a19; --surface-2:#262624; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
   --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --row-alt:rgba(255,255,255,.03);
-  --prev:#6b6a64; --y1:#5a5955; --y2:#d6d5cd; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
+  --prev:#6b6a64; --y1:#b9b8b0; --y2:#7d7c75; --neg:#e66767; --pos:#0ca30c; --wash:rgba(57,135,229,.12); --ev:#e0a040;
   --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
 }
 *{box-sizing:border-box}
@@ -90,6 +90,7 @@ select{cursor:pointer;max-width:260px}
 
 /* 요약 타일 */
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+@media (min-width:1000px){.tiles{grid-template-columns:repeat(5,minmax(0,1fr))}}   /* 지표 10개 = 5 × 2 줄 */
 .tile{padding:12px 14px 11px;box-shadow:1px 0 0 var(--grid),0 1px 0 var(--grid)}
 .t-l{font-size:12px;color:var(--ink-2)}
 .t-v{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:2px 0 4px;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -588,11 +589,11 @@ const trendColor = t => t === C.TOTAL ? 'var(--c1)' : `var(${COLORS[t]})`;
 //  월: 같은 달. 기준 연도의 진행 중인 달은 앞의 해도 같은 일수(1~N일)만
 //  주 · 일: 364일 · 728일 전(같은 요일)
 const YEAR_STYLE = [  // [y0-2, y0-1, y0]
-  { color: 'var(--y2)', dash: '5 3', w: 2 },
+  { color: 'var(--y2)', dash: '6 4', w: 2 },
   { color: 'var(--y1)', dash: '', w: 2 },
   { color: 'var(--c1)', dash: '', w: 2.4 },
 ];
-const CUSTOM_STYLE = [{ color: 'var(--y2)', dash: '5 3', w: 2 }, { color: 'var(--c1)', dash: '', w: 2.4 }];
+const CUSTOM_STYLE = [{ color: 'var(--y1)', dash: '6 4', w: 2 }, { color: 'var(--c1)', dash: '', w: 2.4 }];
 // '선택' 비교: 실적기간 k번째 날 ↔ 비교기간 k번째 날. 월별 = 실적기간의 달력 월로, 주별 = 7일씩, 일별 = 하루씩 묶는다
 function customSlots(at) {
   const cu = customRange(at), d = x => C.dnum(x);
@@ -844,7 +845,7 @@ function yearChart(host, o) {
     show(Math.max(0, Math.min(n - 1, (cur < 0 ? Math.max(0, li) : cur) + (ev.key === 'ArrowLeft' ? -1 : 1))));
   });
 }
-const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', nrv: '순결제거래액(ROAS)', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
+const MET_NAME = { cost: '광고비', uv: 'UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', nrv: '순결제거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
 // 원천에 컬럼이 없어 '데이터 없음'으로 둔 지표 · 기간
 function naNote() {
   const na = (P.source.row || {}).na || {};
@@ -858,9 +859,9 @@ function notesTrend() {
     <li>DA(페이먼츠): DA 중 매체 PAYCO·토스 + 채널 링크사(링크프라이스·다음제휴) / DA: 그 외 DA(포탈·SNS·생활밀착형앱)</li>
     <li>메시지: 광고유형 Message · PA: 광고유형 PA(상품피드) · 합계 = 선택한 유형의 합</li>
     <li>미분류(APP·viral·'-') 제외: ${(un.rows || 0).toLocaleString()}행 · 광고비 ${C.fmt('money', un.cost || 0)}백만원 · 가입 ${(un.join || 0).toLocaleString()}명 (전체 기간)</li>
-    <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · <b>거래액 ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계)</li>
+    <li><b>첫구매 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · 순결제거래액 = 순결제거래액(전체) · <b>순결제 ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계)</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
-    <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(연회색 실선) · 전전년(진회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
+    <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(진회색 실선) · 전전년(회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
     <li>비교 '선택': 흐름 · 실적 표가 실적기간(파란 실선) vs 비교기간(진회색 점선)으로 바뀜 — 같은 순서의 날짜끼리(1일째 ↔ 1일째, 월별 · 주별 · 일별 버튼으로 묶음 단위 선택), 표 맨 앞 열 = 기간 전체</li>
     <li>요약 타일 비교: 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
     <li>세로 점선: 2026-07-01 20% 앱전용 쿠폰 발행 · 2026-08-01 5,000원 웰컴백 쿠폰 앱전용 변경 (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)</li>
@@ -878,7 +879,7 @@ function filterSummary() {
 // ════════════════════════════════════════════════════════════════════
 // 2. 광고 드릴다운
 // ════════════════════════════════════════════════════════════════════
-const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fps', 'fpr', 'nb', 'nrev', 'roas'];
+const DRILL_COLS = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fps', 'fpr', 'nb', 'nrev', 'nrv', 'roas'];
 function renderDrill(main) {
   const D = S.drill, ps = plist(), sh = shown(ps), at = sh[sh.length - 1];
   const X = cmpCtx(at), cmpIdx = X.prev;
@@ -951,7 +952,7 @@ function renderDrill(main) {
   const labels = sh.map(p => p.short), tips = sh.map(p => p.label), dd = sh.map(p => p.idx.length), marks = eventMarks(sh);
   const sec = $id('drSelSec');
   sec.innerHTML = `<div class="sec-h"><h2>선택 항목 추이 · ${esc(name)}</h2><span class="desc">${S.grain === 'month' ? '월별' : S.grain === 'week' ? '주별' : '일별'} ${S.mode === 'avg' ? '일평균' : '누계'} · 점선 = 전년 동기간</span></div><div class="charts c3" id="drCharts"></div>`;
-  const keys = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fpr', 'nb', 'nrev', 'roas'];
+  const keys = ['cost', 'join', 'jcpa', 'fp', 'fcpa', 'fpj', 'fpr', 'nb', 'nrev', 'nrv', 'roas'];
   $id('drCharts').innerHTML = keys.map(k => { const m = C.METRIC[k]; return `<div class="card cc"><div class="cc-t">${m.n}</div><div class="cc-s">${C.unit(m.kind, S.mode)}</div><div class="cc-b" id="drc-${k}"></div></div>`; }).join('');
   for (const k of keys) {
     const m = C.METRIC[k];

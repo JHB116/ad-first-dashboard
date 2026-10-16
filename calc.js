@@ -19,7 +19,8 @@
     { k: 'fpr', n: '첫구매거래액', kind: 'money', base: ['fpr'], f: s => s.fpr },
     { k: 'nb', n: '신규고객수', kind: 'count', base: ['nb'], f: s => s.nb },
     { k: 'nrev', n: '신규거래액', kind: 'money', base: ['nrev'], f: s => s.nrev },
-    { k: 'roas', n: '거래액 ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },   // 순결제거래액 ÷ 광고비
+    { k: 'nrv', n: '순결제거래액', kind: 'money', base: ['nrv'], f: s => s.nrv },
+    { k: 'roas', n: '순결제 ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },   // 순결제거래액 ÷ 광고비
   ];
   // 드릴다운 표에만 쓰는 보조 지표
   const EXTRA = [

@@ -196,7 +196,7 @@ test('표기 규칙', () => {
   assert.equal(C.fmt('count', 98.44), '98.4');
 });
 
-test('거래액 ROAS = 순결제거래액 합 ÷ 광고비 합 · 예전 백업(순결제거래액 없음)은 데이터 없음', () => {
+test('순결제 ROAS = 순결제거래액 합 ÷ 광고비 합 · 예전 백업(순결제거래액 없음)은 데이터 없음', () => {
   const ts = C.daily(R, { group: 't' });
   const tot = C.addSeries([...ts.values()], C.ROW_METS, R.dates.length);
   const oct = C.periods(R, 'month').at(-1);
