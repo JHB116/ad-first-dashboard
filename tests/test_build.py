@@ -112,6 +112,17 @@ def test_alias_column_name(payload):
     assert f['uvn'].sum() > 0 and 'uvn' not in payload['row'].get('na', {})
 
 
+def test_member_uv_gives_non_member_uv(sample, payload):
+    # 추가분 원천은 비회원UV 없이 회원UV 만 있다 → 비회원UV = UV(전체) − 회원UV, '데이터 없음' 아님
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(bd.to_json(payload)))
+    add = bd.load_row_raw(sample / 'sample_row_1001.pkl')
+    f = frame(p2['row'])
+    new = f[f['date'] >= '2026-09-29']
+    raw = add[add['구분_광고유형'] != 'APP']
+    assert new['uvn'].sum() == pytest.approx((bd.to_num(raw['지표_UV(전체)']) - bd.to_num(raw['지표_UV(회원)'])).sum(), abs=1)
+    assert new['uvn'].sum() > 0 and 'uvn' not in p2['row'].get('na', {})
+
+
 def test_2024_file_missing_columns_marked_na(sample):
     p = bd.build([sample / 'sample_row_2024.pkl', sample / 'sample_row.pkl'])
     na = p['row']['na']

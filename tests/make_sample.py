@@ -76,7 +76,10 @@ def main(out: Path):
     out.mkdir(parents=True, exist_ok=True)
     make_row().to_pickle(out / 'sample_row.pkl')
     # 추가분: 9/29(기존과 겹침 → 교체) ~ 10/4, 값은 2배
-    make_row('2026-09-29', '2026-10-04', seed=11, scale_all=2.0, source='add.xlsx').to_pickle(out / 'sample_row_1001.pkl')
+    # 추가분은 비회원UV 대신 회원UV 컬럼만 있는 원천 (비회원UV = UV(전체) − 회원UV 로 계산되는지)
+    add = make_row('2026-09-29', '2026-10-04', seed=11, scale_all=2.0, source='add.xlsx')
+    add['지표_UV(회원)'] = add['지표_UV(전체)'] - add['지표_비회원UV']
+    add.drop(columns=['지표_비회원UV']).to_pickle(out / 'sample_row_1001.pkl')
     make_row('2024-01-01', '2024-12-31', seed=3, source='2024.xlsx').drop(columns=COLS_2024_MISSING).to_pickle(out / 'sample_row_2024.pkl')
     print('sample →', out)
 

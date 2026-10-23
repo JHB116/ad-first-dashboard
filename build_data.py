@@ -54,7 +54,7 @@ LITE_DROP = ['sub', 'bp', 'dev']   # --lite 에서 빼는 차원
 ROW_METRICS = {
     '지표_광고비': 'cost',
     '지표_UV(전체)': 'uv',
-    '지표_UV(비회원)': 'uvn',               # 비회원UV (가입률의 분모)
+    '지표_UV(비회원)': 'uvn',               # 비회원UV (가입률의 분모) — 없으면 UV(전체) − UV(회원)
     '지표_가입회원': 'join',
     '지표_총결제고객수(첫구매)': 'fp',      # 첫구매 (최종 정의: 총결제)
     '지표_총결제거래액(첫구매)': 'fpr',     # 첫구매거래액
@@ -66,11 +66,16 @@ ROW_METRICS = {
     '지표_순결제거래액': 'nrv',             # 순결제거래액 (거래액 ROAS 의 분자)
     '지표_총결제고객수(윈백)': 'wb',        # 윈백 구매고객
 }
+# 비회원UV 컬럼이 없는 원천은 회원UV 로 계산한다 (백업에는 넣지 않는 보조 컬럼)
+ROW_MEMBER_UV = '지표_UV(회원)'
 # 원천마다 이름이 다를 수 있는 컬럼 → 위 이름으로 맞춘다
 ROW_ALIASES = {
     '지표_비회원UV': '지표_UV(비회원)',
     '지표_UV_비회원': '지표_UV(비회원)',
     '지표_비회원 UV': '지표_UV(비회원)',
+    '지표_회원UV': ROW_MEMBER_UV,
+    '지표_UV_회원': ROW_MEMBER_UV,
+    '지표_회원 UV': ROW_MEMBER_UV,
 }
 ROW_DATE = '기간_일자'
 TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA']
@@ -111,7 +116,7 @@ def excel_serial_to_date(s: pd.Series) -> pd.Series:
 
 
 CHUNK = 20_000                                     # 큰 원천은 이 행 수씩 나눠 읽고 바로 합산 (메모리 절약)
-WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS]
+WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS, ROW_MEMBER_UV]
 DIM_KEYS = list(ROW_DIMS.values())
 
 
@@ -316,7 +321,7 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     # 캐시는 같은 파일(크기 · 수정시각)이고 읽는 지표 목록이 같을 때만 쓴다
     #  — 같은 이름으로 파일을 바꿔 넣거나(복사하면 수정시각이 예전 그대로일 수 있음) 지표가 늘면 다시 읽는다
     st = path.stat()
-    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items()), list(ROW_ALIASES.items())]
+    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items()), list(ROW_ALIASES.items()), ROW_MEMBER_UV, 'uvn=uv-member']
     if cacheable and cache.exists():
         try:
             c = pd.read_pickle(cache)
@@ -332,6 +337,7 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     for raw in iter_raw(path):
         for src, key in ROW_METRICS.items():
             seen[key] = seen[key] or bool(raw[src].notna().any())
+        seen['uvn'] = seen['uvn'] or bool(raw[ROW_MEMBER_UV].notna().any())   # 회원UV 가 있으면 비회원UV 를 계산
         p = prep_row(raw)
         del raw
         for k in DIM_KEYS:                      # 문자열 차원은 범주형(코드 + 값 목록)으로 — 메모리를 크게 줄인다
@@ -371,6 +377,10 @@ def prep_row(raw: pd.DataFrame) -> pd.DataFrame:
         df[key] = clean_dim(raw[src])
     for src, key in ROW_METRICS.items():
         df[key] = to_num(raw[src])
+    # 비회원UV 칸이 비어 있고 회원UV 가 있으면 UV(전체) − UV(회원)
+    calc = (raw['지표_UV(비회원)'].isna() & raw[ROW_MEMBER_UV].notna()).to_numpy()
+    if calc.any():
+        df.loc[calc, 'uvn'] = (df['uv'] - to_num(raw[ROW_MEMBER_UV]))[calc]
     bad = df['date'].isna().sum()
     if bad:
         log(f'  ! 날짜를 읽지 못한 행 {bad:,}개 제외')
