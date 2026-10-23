@@ -31,6 +31,7 @@ LF몰 **광고유형별 신규(가입)·첫구매 실적**을 깊게 보는 대�
 1. 아침에 새로 만든 2025-26 xlsb 파일을 **`make_backup.bat` 아이콘 위에 끌어다 놓는다**(파일 위치는 어디든 상관없다). 그 파일만 읽어 백업을 만든다.
 2. 열린 `backup` 폴더의 가장 최근 파일을 대시보드에 끌어다 놓는다 → 2025-26 날짜만 교체 · 추가되고 2024년은 그대로.
 
+- 대시보드 프로그램이 바뀌었으면(빌드 로그 첫 줄 `build_data.py 버전` 이 안내와 다르면) **`update.bat` 더블클릭** → 최신 파일로 바뀐다. 처음 한 번은 GitHub 에서 `update.bat` 을 받아 대시보드 폴더에 둔다.
 - 2024년 csv는 처음 한 번만 읽고 결과를 `data\cache` 에 저장해 두므로, 매일은 2025-26 xlsb만 새로 읽는다.
 - 직접 실행: `python build_data.py`(raw 폴더 전부) · `python build_data.py --row a.xlsb b.csv`
 
@@ -63,6 +64,7 @@ Streamlit Cloud → New app → 이 저장소 · Branch `main` · **Main file pa
 | `calc.js` | 공식 산식(기간 · 일평균 · CPA · 비교 기간 · 드릴다운 트리 · 베이스라인 · 구성 효과 분해). 화면과 테스트가 함께 쓴다 |
 | `build_data.py` | 원천 → 백업, 광고유형 분류, 이어 붙이기 |
 | `make_backup.bat` | PC(윈도우)에서 더블클릭 — `raw` 폴더 원천으로 백업 만들기 |
+| `update.bat` | PC(윈도우)에서 더블클릭 — GitHub `main`의 최신 프로그램 파일(build_data.py · make_backup.bat · calc.js · dashboard.html 등)로 바꾼다. `raw` · `backup` · `data` 폴더는 건드리지 않는다. 하나라도 못 받으면 아무것도 바꾸지 않는다 |
 | `app.py` | Streamlit: `dashboard.html` + `calc.js` 를 화면 가득 표시 (업로드 없음) |
 | `tests/` | `make_sample.py`(가짜 원천, 임의값) · `test_build.py` · `test_calc.mjs` · `test_real_numbers.py`(실데이터 + 로컬 기대값이 있을 때만) |
 | `docs/METRICS.md` | 지표 · 분류 · 기간 정의, 분석 원칙 |
