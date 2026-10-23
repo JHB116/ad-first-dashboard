@@ -7,7 +7,8 @@
     python build_data.py --base 기존백업.json.gz --row 1001.xlsb   # 기존 백업에 새 날짜 추가 · 같은 날짜 교체
     python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 차원 빼고 가볍게
 
-결과: backup/광고신규대시보드_백업_YYYYMMDD.json.gz → 대시보드에 끌어다 놓으면 저장된 데이터에 날짜 단위로 합쳐진다.
+결과: backup/광고신규대시보드_백업_YYYYMMDD.json.gz (사이트검색 리포트만이면 광고신규대시보드_사이트검색_YYYYMMDD.json.gz,
+로우와 리포트를 같이 넣으면 ..._사이트검색포함.json.gz) → 대시보드에 끌어다 놓으면 저장된 데이터에 날짜 단위로 합쳐진다.
 Streamlit 화면의 '원천 파일 올리기'도 같은 함수(build)를 쓴다.
 
 - 로우 원천: 시트 '로우'(첫 행 헤더). 일일보고서 xlsb 전체든, 로우 시트만 뽑은 파일이든, csv 든 같다.
@@ -35,7 +36,7 @@ CACHE_DIR = ROOT / 'data' / 'cache'
 OUT_DIR = ROOT / 'backup'
 
 FORMAT = 'ad-new-dashboard-backup'
-BUILD_VERSION = '2026-10-23 사이트검색 리포트 · 비회원UV(회원UV 계산)'   # 빌드 로그 첫 줄 — PC 의 build_data.py 가 최신인지 확인용
+BUILD_VERSION = '2026-10-23b 사이트검색 백업 이름 구분 · 사이트검색 리포트 · 비회원UV(회원UV 계산)'   # 빌드 로그 첫 줄 — PC 의 build_data.py 가 최신인지 확인용
 VERSION = 1
 
 # ── 1-A. 로우 시트 ─────────────────────────────────────────────────────
@@ -706,13 +707,21 @@ def backup_bytes(payload: dict) -> bytes:
     return buf.getvalue()
 
 
-def backup_name(payload: dict) -> str:
-    return f'광고신규대시보드_백업_{(payload.get("lastDate") or dt.date.today().isoformat()).replace("-", "")}.json.gz'
+def backup_name(payload: dict, stamp: str | None = None) -> str:
+    """로우 백업 · 사이트검색 리포트만 만든 백업 · 리포트가 들어간 백업이 서로 덮어쓰지 않게 이름을 나눈다
+      광고신규대시보드_백업_YYYYMMDD.json.gz             로우만
+      광고신규대시보드_백업_YYYYMMDD_사이트검색포함.json.gz  로우 + 사이트검색 리포트
+      광고신규대시보드_사이트검색_YYYYMMDD.json.gz        사이트검색 리포트만 (이미 연 데이터에 합치는 용도)"""
+    stamp = stamp or (payload.get('lastDate') or dt.date.today().isoformat()).replace('-', '')
+    row = payload.get('row') or {}
+    if row.get('partial'):
+        return f'광고신규대시보드_사이트검색_{stamp}.json.gz'
+    return f'광고신규대시보드_백업_{stamp}{"_사이트검색포함" if row.get("siteDates") else ""}.json.gz'
 
 
 def write_backup(payload: dict, stamp: str | None = None) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / (f'광고신규대시보드_백업_{stamp}.json.gz' if stamp else backup_name(payload))
+    out = OUT_DIR / backup_name(payload, stamp)
     data = backup_bytes(payload)
     out.write_bytes(data)
     log(f'[저장] {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out}  ({len(data)/1e6:.1f}MB)')

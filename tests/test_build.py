@@ -188,6 +188,17 @@ def test_2024_file_missing_columns_marked_na(sample):
     assert p2['row']['na']['nb'] == na['nb']
 
 
+def test_backup_names_do_not_collide(sample, payload, tmp_path, monkeypatch):
+    # 로우 · 사이트검색 리포트만 · 로우 + 리포트 백업은 같은 날짜여도 파일 이름이 다르다
+    monkeypatch.setattr(bd, 'OUT_DIR', tmp_path)
+    site = bd.build([sample / 'sample_site.pkl'])
+    both = bd.build([sample / 'sample_row.pkl', sample / 'sample_site.pkl'])
+    names = [bd.write_backup(p, '20261021').name for p in (payload, site, both)]
+    assert names == ['광고신규대시보드_백업_20261021.json.gz', '광고신규대시보드_사이트검색_20261021.json.gz',
+                     '광고신규대시보드_백업_20261021_사이트검색포함.json.gz']
+    assert len(list(tmp_path.glob('*.json.gz'))) == 3
+
+
 def test_backup_roundtrip(payload, tmp_path, monkeypatch):
     monkeypatch.setattr(bd, 'OUT_DIR', tmp_path)
     p = bd.write_backup(payload)
