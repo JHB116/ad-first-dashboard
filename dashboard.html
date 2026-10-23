@@ -99,6 +99,7 @@ select{cursor:pointer;max-width:260px}
 .t-v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:3px}
 .t-r{display:flex;justify-content:space-between;gap:6px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .t-r b{font-weight:600;color:var(--ink)}
+.t-r.t-ex{margin-top:2px;align-items:flex-end}
 .neg{color:var(--neg)!important}
 .pos{color:var(--pos)!important}
 
@@ -1307,6 +1308,32 @@ const DG_ROWS = [
 ];
 const dgFmt = (kind, v) => kind === 'ratio' ? C.fmt('ratio', v, { dp: v != null && Math.abs(v) < 0.01 ? 2 : 1 }) : C.fmtNum(v, 1);
 
+// 기대치(계절·요일보정) 계산 방식 — 펼치면 이번 화면의 첫구매 값으로 단계별 계산을 보여 준다
+function expDetail(rg, bl, series, refY) {
+  const y = esc(refY), f = v => C.fmtNum(v, 1), x = v => v == null || !isFinite(v) ? '–' : v.toFixed(3);
+  const split = idx => { const s = C.weekdaySplit(R, idx); return { n: s.on.length, m: s.off.length, a: C.avgOf(series, s.on, ['fp']).fp, b: C.avgOf(series, s.off, ['fp']).fp }; };
+  const b = split(rg.base), r = split(rg.recent), rb = split(rg.refBase), rr = split(rg.refRecent);
+  const W = bl.adj.fp, RW = bl.refAdj.fp, RR = bl.refRecent.fp, row = bl.rows.fp;
+  const k = RW && RR != null ? RR / RW : null;
+  const live = row.expAdj != null ? `<ol class="notes">
+      <li>올해 베이스라인 평일 평균 <b>${f(b.a)}</b> · 주말·휴일 평균 <b>${f(b.b)}</b> → 최근 구간 구성(평일 ${r.n}일 · 주말·휴일 ${r.m}일)으로 가중:
+        (${f(b.a)}×${r.n} + ${f(b.b)}×${r.m}) ÷ ${r.n + r.m} = <b>${f(W)}</b> <span class="hint">(단순 베이스라인 ${f(row.base)})</span></li>
+      <li>${y}년 베이스라인 평일 평균 <b>${f(rb.a)}</b> · 주말·휴일 평균 <b>${f(rb.b)}</b> → ${y}년 최근 구간 구성(평일 ${rr.n}일 · 주말·휴일 ${rr.m}일)으로 가중:
+        (${f(rb.a)}×${rr.n} + ${f(rb.b)}×${rr.m}) ÷ ${rr.n + rr.m} = <b>${f(RW)}</b></li>
+      <li>계절 배수 = ${y}년 최근 실제 <b>${f(RR)}</b> ÷ ${f(RW)} = <b>×${x(k)}</b></li>
+      <li>기대치 = ${f(W)} × ${x(k)} = <b>${f(row.expAdj)}</b> → 최근 실제(<b>${f(row.recent)}</b>)는 기대치 대비 <b class="${clsP(row.vsExpAdj)}">${sgn(row.vsExpAdj)}</b></li></ol>`
+    : `<p class="hint">이번 화면은 ${row.exp == null ? `${y}년 같은 구간 데이터가 없어 기대치를 계산하지 않았습니다.` : '한 구간에 평일이나 주말·휴일이 하루도 없어 요일 보정 없이 계절만 반영한 기대치(계절)를 씁니다.'}</p>`;
+  return `<details class="insight"><summary>기대치(계절·요일보정) 계산 방식 자세히 보기</summary><div class="ins-body"><ul class="notes">
+    <li><b>왜 기대치와 비교하나</b> — 베이스라인보다 올랐어도 원래 오르는 시기라면 개선이 아니다. ${y}년 같은 날짜 구간이 얼마나 오르내렸는지를 올해 베이스라인에 곱해 "원래 이 정도는 나왔어야 한다"는 기준을 만든다.</li>
+    <li><b>왜 요일 구성을 맞추나</b> — 첫구매는 평일과 주말·휴일 수준이 다르다. 최근 구간에 쉬는 날이 많으면 그것만으로 일평균이 달라지므로, 베이스라인을 평일 평균 / 주말·휴일 평균으로 나눈 뒤 최근 구간의 평일 · 주말·휴일 일수로 다시 가중한다. 공휴일은 주말과 같은 묶음이다.</li>
+    <li><b>왜 ${y}년도 같은 방식으로 맞추나</b> — ${y}년 최근 구간에도 명절 · 연휴가 몰려 있을 수 있다. 그대로 나누면 계절 배수에 "그해는 쉬는 날이 많았다"는 효과가 섞이므로, ${y}년 베이스라인도 ${y}년 최근 구간의 요일 구성으로 맞춘 뒤 나눈다. 그래서 기대치에는 요일 효과는 올해 구성만, 계절 효과는 ${y}년 증감만 들어간다.</li>
+    <li><b>왜 요일 7개가 아니라 두 묶음인가</b> — 베이스라인 안에서도 요일별로는 날이 적어 평균이 흔들린다. 평일 / 주말·휴일 두 묶음이 안정성과 보정 효과의 절충이다.</li>
+    <li><b>비율 지표</b> — 첫구매 비중 기대치 = 첫구매 기대치 ÷ 구매고객 기대치, 첫구매 전환율 기대치 = 첫구매 기대치 ÷ UV 기대치.</li></ul>
+    <div class="cc-t" style="margin:10px 0 4px">이번 화면 값으로 계산 (첫구매 /일)</div>${live}
+    <ul class="notes"><li class="hint">한계: 명절은 주말보다 실적이 더 크게 빠질 수 있는데 같은 묶음으로 보므로 명절 효과는 일부 남는다. 공휴일 목록(calc.js HOLIDAYS)에 없는 날은 평일로 계산된다.</li></ul>
+    </div></details>`;
+}
+
 function renderDiag(main) {
   if (!R.mets.includes('buy')) {
     main.innerHTML = `<div class="card pad warn" style="margin-top:24px">이 백업에는 '지표_총결제고객수'(구매고객)가 없어 첫구매 진단을 할 수 없습니다. 원천 파일로 백업을 다시 만들어 주세요.</div>`;
@@ -1323,32 +1350,34 @@ function renderDiag(main) {
     <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')}</li>
     <li>베이스라인 ${ymd(DT.b0)}~${ymd(DT.b1)} ${compo(rg.base)} → 최근 ${ymd(DT.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
     <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
-      : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절 기대치를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
+      : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 기대치(계절·요일보정)를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
     <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}</ul></div></section>`;
 
+  // 기대치는 계절·요일보정 하나만 보여 준다. 한 구간에 평일이나 주말·휴일이 하루도 없어 요일 보정을 못 하면 계절만 반영한 값
+  const ex = r => r.expAdj != null ? { v: r.expAdj, vs: r.vsExpAdj, nm: '기대치(계절·요일보정)' }
+    : r.exp != null ? { v: r.exp, vs: r.vsExp, nm: '기대치(계절)' } : { v: null, vs: null, nm: '기대치(계절·요일보정)' };
   const judge = (k, nm) => {
-    const r = rows[k], kind = k === 'share' || k === 'cr' ? 'ratio' : 'count';
-    const v = r.vsExpAdj != null ? r.vsExpAdj : r.vsExp;
+    const r = rows[k], kind = k === 'share' || k === 'cr' ? 'ratio' : 'count', e = ex(r), v = e.vs;
     const word = v == null ? '기대치 없음' : (Math.abs(v) < 0.5 ? '기대치 수준' : (v > 0 ? '기대치 대비 높음' : '기대치 대비 낮음'));
     return `<div class="h">□ ${nm}: ${word} ${v == null ? `<span class="${clsP(r.chg)}">(베이스라인 대비 ${sgn(r.chg)})</span>` : `<span class="${clsP(v)}">${sgn(v)}</span>`}</div>
-      <div class="l2">${dgFmt(kind, r.base)} → ${dgFmt(kind, r.recent)} (${sgn(r.chg)})${r.exp != null ? ` · ${esc(F.refY)}년 같은 구간 ${sgn(r.season)} 반영 기대치 ${dgFmt(kind, r.exp)}` : ''}${r.expAdj != null ? ` · 요일 보정 기대치 ${dgFmt(kind, r.expAdj)} (${sgn(r.vsExpAdj)})` : ''}</div>`;
+      <div class="l2">${dgFmt(kind, r.base)} → ${dgFmt(kind, r.recent)} (${sgn(r.chg)})${e.v != null ? ` · ${e.nm} ${dgFmt(kind, e.v)}` : ''}</div>`;
   };
-  // 비중 판정은 계절 기대치(요일 보정 우선) 대비, 기대치가 없으면 베이스라인 대비
-  const shareRef = rows.share.vsExpAdj ?? rows.share.vsExp ?? rows.share.chg;
+  // 비중 판정은 기대치(계절·요일보정) 대비, 기대치가 없으면 베이스라인 대비
+  const shareRef = ex(rows.share).vs ?? rows.share.chg;
   const shareBad = shareRef != null && shareRef < -0.5;
   const uvP = rows.uv.chg, crP = rows.cr.chg;
   h += `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">일평균 · 비율은 합계 ÷ 합계</span></div>
     <div class="tiles">${DG_ROWS.map(d => {
-      const r = rows[d.k];
+      const r = rows[d.k], e = ex(r);
       return `<div class="tile"><div class="t-l">${d.n} · 최근${d.sub ? ` <span class="hint">${d.sub}</span>` : ''}</div><div class="t-v">${dgFmt(d.kind, r.recent)}<small>${d.kind === 'ratio' ? '' : '명/일'}</small></div>
         <div class="t-r"><span>베이스라인 <b>${dgFmt(d.kind, r.base)}</b></span><span class="${clsP(r.chg)}">${sgn(r.chg)}</span></div>
-        <div class="t-r"><span>기대치 <b>${dgFmt(d.kind, r.exp)}</b></span><span class="${clsP(r.vsExp)}">${sgn(r.vsExp)}</span></div>
-        <div class="t-r"><span>요일보정 <b>${dgFmt(d.kind, r.expAdj)}</b></span><span class="${clsP(r.vsExpAdj)}">${sgn(r.vsExpAdj)}</span></div></div>`;
+        <div class="t-r t-ex"><span>${e.nm}<br><b>${dgFmt(d.kind, e.v)}</b></span><span class="${clsP(e.vs)}">${sgn(e.vs)}</span></div></div>`;
     }).join('')}</div>
     <div class="card pad judge" style="margin-top:12px">${judge('fp', '첫구매')}${judge('share', '첫구매 비중')}${judge('buy', '구매고객')}
       <div class="h" style="margin-top:4px">ㄴ 첫구매 변화 = 유입(UV) ${sgn(uvP)} × 전환율(첫구매 ÷ UV) ${sgn(crP)}</div>
-      <div class="l3">&gt; ${shareBad ? `첫구매 비중 ${rows.share.exp != null ? '기대치 대비' : '베이스라인 대비'} 하락 → 악화로 판정.` + ' 아래 구성 효과(브랜드/기획전 · 캠페인 · 디바이스) 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : '첫구매 비중 하락 없음 — 드릴다운에서 기대치 대비 낮은 항목 확인'}${uvP != null && crP != null ? (Math.abs(crP) > Math.abs(uvP) ? ' · 첫구매 변화는 전환율 쪽이 더 큼' : ' · 첫구매 변화는 유입(UV) 쪽이 더 큼') : ''}</div>
-      <div class="hint">계절 기대치 = 베이스라인 × (비교 연도 같은 날짜 구간의 최근 ÷ 베이스라인). 요일 보정 = 베이스라인을 평일 / 주말·휴일 평균으로 나눠 최근 구간의 요일 구성으로 다시 가중(비교 연도도 같은 방식).</div></div></section>`;
+      <div class="l3">&gt; ${shareBad ? `첫구매 비중 ${ex(rows.share).vs != null ? '기대치 대비' : '베이스라인 대비'} 하락 → 악화로 판정.` + ' 아래 구성 효과(브랜드/기획전 · 캠페인 · 디바이스) 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : '첫구매 비중 하락 없음 — 드릴다운에서 기대치 대비 낮은 항목 확인'}${uvP != null && crP != null ? (Math.abs(crP) > Math.abs(uvP) ? ' · 첫구매 변화는 전환율 쪽이 더 큼' : ' · 첫구매 변화는 유입(UV) 쪽이 더 큼') : ''}</div>
+      <div class="hint">기대치(계절·요일보정) = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산)</div></div>
+    ${expDetail(rg, bl, series, F.refY)}</section>`;
 
 
   const avail = DIAG_DIMS.filter(k => R.dims[k]);
@@ -1375,7 +1404,7 @@ function renderDiag(main) {
     <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
       <li>구매고객 = 총결제고객수 · 첫구매 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매 전환율 = 첫구매 ÷ UV(전체)</li>
-      <li>"개선 없음" ≠ "유지": 계절 기대치를 못 넘으면 "기대치 대비 -x%", 비중이 내려가면 악화로 판정</li>
+      <li>"개선 없음" ≠ "유지": 기대치(계절·요일보정)를 못 넘으면 "기대치 대비 -x%", 비중이 내려가면 악화로 판정</li>
       <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
       <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
   main.innerHTML = h;
