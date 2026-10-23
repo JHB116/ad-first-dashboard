@@ -375,7 +375,7 @@ const C = window.AdCalc;
 const $id = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = { '브랜드검색광고': '--c1', '사이트검색광고': '--c2', '쇼핑검색광고': '--c3', 'DA': '--c4', 'DA(페이먼츠)': '--c5', '메시지': '--c6', 'PA': '--c7', '합계': '--ink' };
-const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용출처', camp: '캠페인', sub: '하위캠페인', bp: '브랜드/기획전', dev: '디바이스' };
+const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용출처', camp: '캠페인', sub: '하위캠페인', bp: '브랜드/기획전', dev: '디바이스', rcamp: '보고 캠페인', rgrp: '보고 그룹', cat: '카테고리', kind: '구분(소재)' };
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
@@ -431,11 +431,12 @@ async function mergeAndStore(add) {
   DGN.mergeIn(add && add.diagNotes);                // 첫구매 진단 편집본도
   if (add) { delete add.memos; delete add.diagNotes; }
   const base = await idbGet();
+  if (add && add.row && add.row.partial && !(base && base.row)) throw new Error('사이트검색 리포트만으로 만든 백업입니다 — 로우로 만든 백업을 먼저 연 뒤 이 백업을 여세요');
   const merged = C.mergeBackup(base, add);
   const stored = await idbPut(merged);
   use(merged);
   const m = merged.merged, r = merged.source.row;
-  toast(m ? `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일 → ${r.from} ~ ${r.to}` : `저장했습니다 · ${r.from} ~ ${r.to}`);
+  toast(m ? (m.site || m.skipped ? `사이트검색광고를 리포트 값으로 바꿨습니다 · ${m.site}일${m.skipped ? ` (저장된 데이터에 없는 ${m.skipped}일은 뺌)` : ''}` : `저장된 데이터에 합쳤습니다 · 새 날짜 ${m.added}일 · 교체 ${m.replaced}일 · 유지 ${m.kept}일`) + ` → ${r.from} ~ ${r.to}` : `저장했습니다 · ${r.from} ~ ${r.to}`);
   if (nMemo) setTimeout(() => toast(`백업의 메모 ${nMemo}개를 합쳤습니다`), 300);
   if (!stored) toast('브라우저 저장소를 쓸 수 없어 새로고침하면 사라집니다 — 백업 내려받기로 받아 두세요');
 }
@@ -1162,6 +1163,15 @@ function naNote() {
   const items = Object.entries(na).map(([m, v]) => `${MET_NAME[m] || m} ${ymd(v.from)}~${ymd(v.to)}(${v.days}일)`);
   return items.length ? `<li><b>데이터 없음</b>(원천에 컬럼이 없던 기간 — 그 기간이 낀 값은 '–'): ${esc(items.join(' · '))}${na.uvn ? ' — 비회원UV 는 원천의 UV(비회원) 또는 UV(회원) 칸으로 계산한다. 그 기간 원천에 칸이 있는데도 여기 보이면 그 원천으로 백업을 다시 만들어 올린다(이전 버전 build_data.py 로 만든 백업에는 비회원UV 가 없다)' : ''}</li>` : '';
 }
+// 사이트검색 리포트로 바꾼 날짜 · 마지막으로 넣은 리포트의 로우 vs 리포트 합계
+function siteNote() {
+  const si = (P.source.row || {}).site, sd = (P.row || {}).siteDates || [];
+  if (!si || !sd.length) return '<li>사이트검색광고: 로우 값 (사이트검색 리포트를 넣으면 그 날짜는 리포트 값으로 바뀐다)</li>';
+  const nm = { cost: '광고비', join: '가입', fp: '첫구매', fpr: '첫구매거래액', nrev: '신규거래액' }, money = { cost: 1, fpr: 1, nrev: 1 };
+  const v = (m, x) => x == null ? '–' : money[m] ? C.fmt('money', x, { fixed: true }) + '백만' : C.fmtNum(x, 0);
+  const cmp = Object.entries(si.cmp || {}).map(([m, [a, b]]) => `${nm[m] || m} ${v(m, a)} → ${v(m, b)}`).join(' · ');
+  return `<li><b>사이트검색광고: ${sd.length}일(${ymd(sd[0])}~${ymd(sd[sd.length - 1])})은 사이트검색 리포트(숨김_AF코드성과) 값</b> — 로우의 사이트검색광고 행 대신 씀(드릴다운에서 보고 캠페인 · 보고 그룹 · 카테고리 · 구분(소재)로 나눠 볼 수 있음 — 비교 기간도 리포트가 있어야 항목별 비교가 맞다). 마지막 리포트(${ymd(si.from)}~${ymd(si.to)}) 로우 → 리포트 합계: ${esc(cmp)}${si.files && si.files.length ? ` · ${esc(si.files.slice(-2).join(', '))}` : ''}</li>`;
+}
 function notesTrend() {
   const src = P.source.row || {}, un = src.unclassified || {};
   return `<section><div class="sec-h"><h2>집계 기준</h2><span class="desc">출처 일일보고서 로우 시트 · ${esc(src.file || '')}</span></div><div class="card pad"><ul class="notes">
@@ -1177,6 +1187,7 @@ function notesTrend() {
     <li>요약 타일 비교: 상단에서 고른 비교 하나(전년 · 전기 · 선택). 월 — 전년 같은 월 · 전월, 진행 중인 월은 같은 일자(1일~N일)까지만 / 주·일 — 전년은 364일 전 같은 요일. 주는 ISO 월~일, 월·주차 표시는 그 주 목요일 기준</li>
     <li>세로 점선: 2026-07-01 20% 앱전용 쿠폰 발행 · 2026-08-01 5,000원 웰컴백 쿠폰 앱전용 변경 (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)</li>
     ${naNote()}
+    ${siteNote()}
     <li>원천 이상치: 쇼핑검색광고 가입 25.08 — 트래킹 공백 추정(급감 구간)</li>
   </ul></div></section>`;
 }
@@ -1196,7 +1207,7 @@ function renderDrill(main) {
   const X = cmpCtx(at), cmpIdx = X.prev;
   const types = R.dims.t;
   if (D.type && !types.includes(D.type)) D.type = '';
-  const avail = ['ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev'].filter(k => R.dims[k]);   // 백업에 있는 차원만 (--lite 면 일부 없음)
+  const avail = ['ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev', 'rcamp', 'rgrp', 'cat', 'kind'].filter(k => R.dims[k]);   // 백업에 있는 차원만 (--lite 면 일부 없음)
   D.dims = D.dims.filter(d => avail.includes(d));
   if (!D.dims.length) D.dims = ['md', 'camp'];
   const dims = D.type ? D.dims : ['t', ...D.dims];
@@ -1277,7 +1288,7 @@ function renderDrill(main) {
 // ════════════════════════════════════════════════════════════════════
 // 3. 첫구매 진단 (로우 기준 — 구매고객 · 첫구매 · 비중 · UV · 전환율)
 // ════════════════════════════════════════════════════════════════════
-const DIAG_DIMS = ['t', 'ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev'];
+const DIAG_DIMS = ['t', 'ch', 'md', 'src', 'bp', 'camp', 'sub', 'dev', 'rcamp', 'rgrp', 'cat', 'kind'];
 function dgValid() { return null; }   // 모든 날짜 사용
 function dgLastOk() { return R.dates[R.dates.length - 1]; }
 function dgYears() { return [...new Set(R.dates.map(d => +d.slice(0, 4)))]; }
@@ -1510,7 +1521,7 @@ function renderDiag(main) {
     <li>베이스라인 ${ymd(DT.b0)}~${ymd(DT.b1)} ${compo(rg.base)} → 최근 ${ymd(DT.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
     <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
       : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절요일보정을 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
-    <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}</ul></div></section>`;
+    <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}${siteNote()}</ul></div></section>`;
   main.innerHTML = h;
 
   renderDgTree(rg, mets);

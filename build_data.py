@@ -35,6 +35,7 @@ CACHE_DIR = ROOT / 'data' / 'cache'
 OUT_DIR = ROOT / 'backup'
 
 FORMAT = 'ad-new-dashboard-backup'
+BUILD_VERSION = '2026-10-23 사이트검색 리포트 · 비회원UV(회원UV 계산)'   # 빌드 로그 첫 줄 — PC 의 build_data.py 가 최신인지 확인용
 VERSION = 1
 
 # ── 1-A. 로우 시트 ─────────────────────────────────────────────────────
@@ -49,8 +50,13 @@ ROW_DIMS = {
     '구분_하위캠페인': 'sub',
     '구분_브랜드/기획전': 'bp',
     '구분_디바이스': 'dev',
+    # 아래는 사이트검색 리포트에만 있는 구분 (로우 행은 '-')
+    '구분_보고_캠페인': 'rcamp',
+    '구분_보고_그룹': 'rgrp',
+    '구분_카테고리': 'cat',
+    '구분_구분': 'kind',
 }
-LITE_DROP = ['sub', 'bp', 'dev']   # --lite 에서 빼는 차원
+LITE_DROP = ['sub', 'bp', 'dev', 'rcamp', 'rgrp', 'cat', 'kind']   # --lite 에서 빼는 차원
 ROW_METRICS = {
     '지표_광고비': 'cost',
     '지표_UV(전체)': 'uv',
@@ -78,6 +84,13 @@ ROW_ALIASES = {
     '지표_회원 UV': ROW_MEMBER_UV,
 }
 ROW_DATE = '기간_일자'
+# ── 1-B. 사이트검색 리포트 ─────────────────────────────────────────────
+# 숨김 시트 '숨김_AF코드성과' — 로우와 같은 컬럼에서 '구분_' · '지표_' 를 뺀 이름(날짜 = '날짜').
+# 사이트검색광고만 담고, 리포트가 있는 날짜는 로우의 사이트검색광고 행 대신 이 행을 쓴다 (로우는 캠페인 구분이 부족)
+SITE_SHEET = '숨김_AF코드성과'
+SITE_TYPE = '사이트검색광고'
+ROW_BRAND = '구분_브랜드'          # 브랜드/기획전이 '-'면 이 칸(리포트의 '브랜드')을 쓴다 — 백업에는 넣지 않는 보조 컬럼
+SITE_CMP = ['cost', 'join', 'fp', 'fpr', 'nrev']   # 로우 vs 리포트 합계 비교 지표
 TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA']
 PAY_MEDIA = ['PAYCO', '토스']
 
@@ -116,7 +129,7 @@ def excel_serial_to_date(s: pd.Series) -> pd.Series:
 
 
 CHUNK = 20_000                                     # 큰 원천은 이 행 수씩 나눠 읽고 바로 합산 (메모리 절약)
-WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS, ROW_MEMBER_UV]
+WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS, ROW_MEMBER_UV, ROW_BRAND]
 DIM_KEYS = list(ROW_DIMS.values())
 WANT_SET = set(WANT)
 WANT_KEY = {c.replace(' ', ''): c for c in WANT}     # 공백 뺀 이름 → 표준 이름
@@ -179,36 +192,74 @@ def canon(c) -> str:
     return ROW_ALIASES.get(k, WANT_KEY.get(k, c))
 
 
-def _norm(df: pd.DataFrame, name: str) -> pd.DataFrame:
+def site_canon(c) -> str:
+    """사이트검색 리포트 헤더 → 로우 표준 이름 ('캠페인' → '구분_캠페인', '광고비' → '지표_광고비', '날짜' → 기간_일자)"""
+    c = str(c).strip() if c is not None else ''
+    if c == '날짜':
+        return ROW_DATE
+    if c == '기간':
+        return '구분_기간'
+    for pre in ('구분_', '지표_'):
+        k = canon(pre + c)
+        if k in WANT_SET:
+            return k
+    return c
+
+
+def source_kind(path: Path) -> str:
+    """원천 종류: 'row'(로우 시트) · 'site'(사이트검색 리포트 — 로우 시트 없이 숨김_AF코드성과 시트, 또는 그 헤더의 csv)"""
+    path = Path(path)
+    ext = path.suffix.lower()
+    if ext == '.xlsb':
+        from pyxlsb import open_workbook
+        with open_workbook(str(path)) as wb:
+            sheets = wb.sheets
+    elif ext in ('.xlsx', '.xlsm'):
+        sheets = pd.ExcelFile(path).sheet_names
+    else:
+        header = list(pd.read_pickle(path).columns) if ext == '.pkl' else sniff_csv(path)[2]
+        header = [str(h).strip() for h in header]
+        return 'site' if ROW_DATE not in header and '날짜' in header and '보고_캠페인' in header else 'row'
+    return 'site' if ROW_SHEET not in sheets and SITE_SHEET in sheets else 'row'
+
+
+def _label(kind):
+    return ('[사이트검색]', SITE_SHEET, '날짜') if kind == 'site' else ('[로우]', ROW_SHEET, ROW_DATE)
+
+
+def _norm(df: pd.DataFrame, name: str, kind: str = 'row') -> pd.DataFrame:
     """원천 한 덩어리 → WANT 컬럼(없으면 빈값)"""
-    df.columns = [canon(c) for c in df.columns]
+    df.columns = [(site_canon if kind == 'site' else canon)(c) for c in df.columns]
     if ROW_DATE not in df.columns and '구분_기간' in df.columns:    # 기간_일자가 없으면 구분_기간(YYYYMMDD)
         df[ROW_DATE] = df['구분_기간']
     if ROW_DATE not in df.columns:
-        raise ValueError(f'[로우] {name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+        tag, sheet, dcol = _label(kind)
+        raise ValueError(f'{tag} {name}: 첫 행에 "{dcol}" 컬럼이 없습니다 ({sheet} 시트 형식인지 확인)')
     for c in WANT:
         if c not in df.columns:
             df[c] = None
     return df[WANT]
 
 
-def iter_xlsb(path: Path):
-    """pyxlsb 로 시트를 직접 순회 — 필요한 컬럼만, CHUNK 행씩 내보낸다"""
+def iter_xlsb(path: Path, kind: str = 'row'):
+    """pyxlsb 로 시트를 직접 순회 — 필요한 컬럼만, CHUNK 행씩 내보낸다 (숨김 시트도 읽는다)"""
     from pyxlsb import open_workbook
 
+    tag, sheet, dcol = _label(kind)
+    mapper = site_canon if kind == 'site' else canon
     rows, idx = [], None
     with open_workbook(str(path)) as wb:
-        if ROW_SHEET not in wb.sheets:
-            raise ValueError(f'[로우] {path.name} 에 "{ROW_SHEET}" 시트가 없습니다. 시트: {wb.sheets}')
-        with wb.get_sheet(ROW_SHEET) as sh:
+        if sheet not in wb.sheets:
+            raise ValueError(f'{tag} {path.name} 에 "{sheet}" 시트가 없습니다. 시트: {wb.sheets}')
+        with wb.get_sheet(sheet) as sh:
             for n, r in enumerate(sh.rows()):
                 vals = [c.v for c in r]
                 if idx is None:
-                    header = [canon(v) for v in vals]
+                    header = [mapper(v) for v in vals]
                     if ROW_DATE not in header and '구분_기간' in header:
                         header[header.index('구분_기간')] = ROW_DATE
                     if ROW_DATE not in header:
-                        raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+                        raise ValueError(f'{tag} {path.name}: 첫 행에 "{dcol}" 컬럼이 없습니다 ({sheet} 시트 형식인지 확인)')
                     idx = [header.index(c) if c in header else None for c in WANT]
                     continue
                 rows.append(tuple(vals[i] if i is not None and i < len(vals) else None for i in idx))
@@ -220,28 +271,31 @@ def iter_xlsb(path: Path):
         yield pd.DataFrame(rows, columns=WANT)
 
 
-def iter_raw(path: Path):
-    """원천 파일 → WANT 컬럼 DataFrame 덩어리들 (xlsb · csv 는 CHUNK 행씩)"""
+def iter_raw(path: Path, kind: str | None = None):
+    """원천 파일 → WANT 컬럼 DataFrame 덩어리들 (xlsb · csv 는 CHUNK 행씩). kind 를 안 주면 파일을 보고 정한다"""
     path = Path(path)
+    kind = kind or source_kind(path)
     ext = path.suffix.lower()
+    tag, sheet, dcol = _label(kind)
+    mapper = site_canon if kind == 'site' else canon
     if ext == '.xlsb':
-        yield from iter_xlsb(path)
+        yield from iter_xlsb(path, kind)
     elif ext == '.pkl':                                   # 테스트용
-        yield _norm(pd.read_pickle(path), path.name)
+        yield _norm(pd.read_pickle(path), path.name, kind)
     elif ext in ('.xlsx', '.xlsm'):
         xl = pd.ExcelFile(path)
-        yield _norm(xl.parse(ROW_SHEET if ROW_SHEET in xl.sheet_names else xl.sheet_names[0], dtype=str), path.name)
+        yield _norm(xl.parse(sheet if sheet in xl.sheet_names else xl.sheet_names[0], dtype=str), path.name, kind)
     else:
         enc, sep, header, errors = sniff_csv(path)
-        use = [c for c in header if canon(c) in WANT or c == '구분_기간']   # 필요한 컬럼만 읽는다
-        if ROW_DATE not in use and '구분_기간' not in use:
-            raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
+        use = [c for c in header if mapper(c) in WANT or mapper(c) == '구분_기간']   # 필요한 컬럼만 읽는다
+        if not any(mapper(c) in (ROW_DATE, '구분_기간') for c in use):
+            raise ValueError(f'{tag} {path.name}: 첫 행에 "{dcol}" 컬럼이 없습니다 ({sheet} 시트 형식인지 확인)')
         reader = pd.read_csv(path, encoding=enc, sep=sep, usecols=use, dtype=str, keep_default_na=False, na_values=[''],
                              chunksize=CHUNK, encoding_errors=errors)
         for k, chunk in enumerate(reader):
             if k:
                 log(f'  … {k * CHUNK:,}행')
-            yield _norm(chunk, path.name)
+            yield _norm(chunk, path.name, kind)
 
 
 def concat_cat(frames: list[pd.DataFrame]) -> pd.DataFrame:
@@ -318,7 +372,7 @@ def load_row_raw(path: Path, use_cache: bool = True) -> pd.DataFrame:
     return pd.concat(list(iter_raw(path)), ignore_index=True)
 
 
-def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list[str]]:
+def load_prepped(path: Path, use_cache: bool = True, kind: str = 'row') -> tuple[pd.DataFrame, list[str]]:
     """원천 → 정제 · (일자 × 차원) 합산 DataFrame, 원천에 없는 지표 키.
     덩어리마다 바로 합산해 메모리를 원천 크기의 일부만 쓴다. xlsb · csv 는 data/cache/ 에 결과를 캐시"""
     path = Path(path)
@@ -327,24 +381,25 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     # 캐시는 같은 파일(크기 · 수정시각)이고 읽는 지표 목록이 같을 때만 쓴다
     #  — 같은 이름으로 파일을 바꿔 넣거나(복사하면 수정시각이 예전 그대로일 수 있음) 지표가 늘면 다시 읽는다
     st = path.stat()
-    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items()), list(ROW_ALIASES.items()), ROW_MEMBER_UV, 'uvn=uv-member']
+    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items()), list(ROW_ALIASES.items()), ROW_MEMBER_UV, 'uvn=uv-member',
+           kind, ROW_BRAND, BUILD_VERSION]
     if cacheable and cache.exists():
         try:
             c = pd.read_pickle(cache)
             if c.get('sig') == sig:
-                log(f'[로우] 캐시 사용: {cache.name}')
+                log(f'{_label(kind)[0]} 캐시 사용: {cache.name}')
                 return c['df'], c['missing']
         except Exception:   # 깨진 캐시는 무시하고 다시 읽는다
             pass
-    log(f'[로우] {path.name} 읽는 중 (큰 파일은 몇 분)…')
+    log(f'{_label(kind)[0]} {path.name} 읽는 중 (큰 파일은 몇 분)…')
     mets = list(ROW_METRICS.values())
     seen = {key: False for key in mets}
     parts = []
-    for raw in iter_raw(path):
+    for raw in iter_raw(path, kind):
         for src, key in ROW_METRICS.items():
             seen[key] = seen[key] or bool(raw[src].notna().any())
         seen['uvn'] = seen['uvn'] or bool(raw[ROW_MEMBER_UV].notna().any())   # 회원UV 가 있으면 비회원UV 를 계산
-        p = prep_row(raw)
+        p = prep_row(raw, kind)
         del raw
         for k in DIM_KEYS:                      # 문자열 차원은 범주형(코드 + 값 목록)으로 — 메모리를 크게 줄인다
             p[k] = p[k].astype('category')
@@ -377,10 +432,14 @@ def classify(df: pd.DataFrame) -> pd.Series:
     return out
 
 
-def prep_row(raw: pd.DataFrame) -> pd.DataFrame:
+def prep_row(raw: pd.DataFrame, kind: str = 'row') -> pd.DataFrame:
     df = pd.DataFrame({'date': excel_serial_to_date(raw[ROW_DATE])})
     for src, key in ROW_DIMS.items():
         df[key] = clean_dim(raw[src])
+    if raw[ROW_BRAND].notna().any():          # 브랜드/기획전이 '-'면 브랜드
+        df['bp'] = df['bp'].where(df['bp'] != '-', clean_dim(raw[ROW_BRAND]))
+    if kind == 'site':                          # 사이트검색 리포트는 전부 사이트검색광고 (광고유형 칸이 '-'인 행도)
+        df['adtype'], df['ch'] = 'SA', SITE_TYPE
     for src, key in ROW_METRICS.items():
         df[key] = to_num(raw[src])
     # 비회원UV 칸이 비어 있고 회원UV 가 있으면 UV(전체) − UV(회원)
@@ -509,16 +568,24 @@ def read_backup(src) -> dict:
 # ── 빌드 ───────────────────────────────────────────────────────────────
 def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache: bool) -> tuple[dict, dict]:
     dims = [k for k in ROW_DIMS.values() if k != 'adtype' and not (lite and k in LITE_DROP)]
-    frames, files, miss = [], [], []
+    mets = list(ROW_METRICS.values())
+    frames, files, miss, sframes, sfiles = [], [], [], [], []
     for p in row_paths:
-        df, ms = load_prepped(p, use_cache=use_cache)
+        kind = source_kind(p)
+        df, ms = load_prepped(p, use_cache=use_cache, kind=kind)
+        if kind == 'site':                  # 사이트검색 리포트: 없는 지표는 0 (그 날짜 다른 유형은 로우에 있으므로 '데이터 없음'으로 두지 않는다)
+            sframes.append(df)
+            sfiles.append(Path(p).name)
+            if ms:
+                log(f'  ! {Path(p).name}: 리포트에 없는 지표 → 사이트검색광고는 0 {ms}')
+            continue
         frames.append(df)
         miss.append(ms)
         files.append(Path(p).name)
         if miss[-1]:
             log(f'  ! {Path(p).name}: 없는 지표 → 그 날짜들은 "데이터 없음" {miss[-1]}')
     new = latest_wins(frames) if frames else None
-    mets = list(ROW_METRICS.values())
+    site = latest_wins(sframes) if sframes else None
     na: dict[str, set] = {m: set() for m in mets}     # 지표별 '데이터 없음' 날짜
     seen: set = set()
     for f, ms in zip(reversed(frames), reversed(miss)):   # 날짜마다 실제로 쓰인(뒤) 파일 기준
@@ -530,8 +597,11 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
     parts, all_dates = [], set()
     unc = {'rows': 0, 'cost': 0.0, 'join': 0.0, 'adtypes': []}
     new_dates = set(new['date'].unique()) if new is not None else set()
+    base_site: set = set()                  # 기존 백업에서 사이트검색광고가 리포트 값인 날짜
+    carry = None                            # 새 로우로 교체되는 날짜의 기존 리포트 행 (사이트검색광고는 리포트 값을 유지)
     if base and base.get('row'):
         old, old_dates = decode(base['row'])
+        base_site = {pd.Timestamp(d) for d in base['row'].get('siteDates', [])}
         for k in dims:                      # 예전 백업에 없던 차원은 '-'
             if k not in old.columns:
                 old[k] = '-'
@@ -543,12 +613,13 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
                 na[m] |= keep_dates
             else:
                 na[m] |= {pd.Timestamp(d) for d in prev_na.get(m, [])} & keep_dates
-        old = old[~old['date'].isin(new_dates)]
-        parts.append(old[['date', 't', *dims, *ROW_METRICS.values()]])
-        all_dates |= {d for d in old_dates if d not in new_dates}
+        old = old[['date', 't', *dims, *mets]]
+        carry = old[old['date'].isin(new_dates & base_site) & (old['t'] == SITE_TYPE)]
+        parts.append(old[~old['date'].isin(new_dates)])
+        all_dates |= keep_dates
         pu = info_prev.get('unclassified') or {}
         unc = {'rows': pu.get('rows', 0), 'cost': pu.get('cost', 0.0), 'join': pu.get('join', 0.0), 'adtypes': pu.get('adtypes', [])}
-        log(f'[로우] 기존 백업 {len(old_dates)}일 중 {len(old_dates) - len(set(old_dates) & new_dates)}일 유지')
+        log(f'[로우] 기존 백업 {len(old_dates)}일 중 {len(keep_dates)}일 유지')
     if new is not None and len(new):
         g, u = agg_row(new, dims)
         parts.append(g)
@@ -556,18 +627,59 @@ def build_row_section(row_paths: list, base: dict | None, lite: bool, use_cache:
         unc = {'rows': unc['rows'] + u['rows'], 'cost': unc['cost'] + u['cost'], 'join': unc['join'] + u['join'],
                'adtypes': sorted(set(unc['adtypes']) | set(u['adtypes']))[:20]}
         log(f'[로우] 새 원천 {len(new):,}행 · {len(new_dates)}일 ({min(new_dates):%Y-%m-%d} ~ {max(new_dates):%Y-%m-%d})')
-    if not parts:
+    if not parts and site is None:
         return None, {}
-    g = pd.concat(parts, ignore_index=True)
+    g = pd.concat(parts, ignore_index=True) if parts else None
+
+    # 사이트검색 리포트 — 리포트가 있는 날짜의 사이트검색광고 행을 리포트 행으로 바꾼다
+    partial = False
+    site_info = info_prev.get('site')
+    site_dates = base_site & (all_dates - new_dates)   # 기존 백업에서 그대로 남는 리포트 날짜
+    if site is not None and len(site):
+        gs, _ = agg_row(site, dims)
+        sd = set(site['date'].unique())
+        if g is None:                       # 리포트만으로 만든 백업 — 대시보드에서 기존 데이터에 합칠 때 사이트검색광고만 바꾼다
+            partial, use = True, sd
+        else:
+            use = sd & all_dates
+            if sd - use:
+                log(f'  ! [사이트검색] 로우에 없는 날짜 {len(sd - use)}일은 뺌 (그날 다른 광고유형이 없어 합계가 틀어진다)')
+        cur = g[(g['t'] == SITE_TYPE) & g['date'].isin(use)] if g is not None else None
+        rep_ = gs[gs['date'].isin(use)]
+        cmp = {m: [None if cur is None else float(cur[m].sum()), float(rep_[m].sum())] for m in SITE_CMP}
+        if g is not None:
+            g = g[~((g['t'] == SITE_TYPE) & g['date'].isin(use))]
+        g = pd.concat([x for x in (g, rep_) if x is not None], ignore_index=True)
+        site_dates |= use
+        ud = sorted(use)
+        site_info = {'files': ((site_info or {}).get('files', []) if base else []) + sfiles,
+                     'from': ud[0].strftime('%Y-%m-%d') if ud else None, 'to': ud[-1].strftime('%Y-%m-%d') if ud else None,
+                     'days': len(ud), 'cmp': cmp}
+        log(f'[사이트검색] {len(ud)}일 사이트검색광고를 리포트 값으로 — 로우 vs 리포트 '
+            + ' · '.join(f'{m} {"-" if a is None else f"{a:,.0f}"} → {b:,.0f}' for m, (a, b) in cmp.items()))
+        all_dates |= use
+    if carry is not None and len(carry):    # 새 로우로 바뀐 날짜라도 기존 리포트 값이 있으면 사이트검색광고는 리포트 값 유지
+        cd = set(carry['date'].unique()) - site_dates
+        if cd:
+            g = g[~((g['t'] == SITE_TYPE) & g['date'].isin(cd))]
+            g = pd.concat([g, carry[carry['date'].isin(cd)]], ignore_index=True)
+            site_dates |= cd
+            log(f'[사이트검색] 새 로우 날짜 중 {len(cd)}일은 기존 백업의 리포트 값 유지')
     g = g.groupby(['date', 't', *dims], sort=False, observed=True)[mets].sum().reset_index()
     dates = sorted(all_dates)
     sec = encode(g, dates, ['t', *dims], mets, fixed={'t': TYPES})
     sec['na'] = {m: sorted(d.strftime('%Y-%m-%d') for d in ds) for m, ds in na.items() if ds}
+    if site_dates:
+        sec['siteDates'] = sorted(d.strftime('%Y-%m-%d') for d in site_dates)
+    if partial:
+        sec['partial'] = {'types': [SITE_TYPE]}
     info = {'files': (info_prev.get('files', []) if base else []) + files,
             'rows': int(len(g)), 'from': dates[0].strftime('%Y-%m-%d'), 'to': dates[-1].strftime('%Y-%m-%d'),
             'days': len(dates), 'unclassified': unc,
             'na': {m: {'from': v[0], 'to': v[-1], 'days': len(v)} for m, v in sec['na'].items()}}
-    info['file'] = ', '.join(info['files'][-3:])
+    if site_info:
+        info['site'] = {**site_info, 'total': len(site_dates)}
+    info['file'] = ', '.join((info['files'] + (site_info or {}).get('files', []) if partial else info['files'])[-3:])
     log(f'[로우] 집계 {len(g):,}행 · {len(dates)}일 ({info["from"]} ~ {info["to"]})')
     return sec, info
 
@@ -613,7 +725,7 @@ def by_mtime(paths):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='광고 신규 실적 대시보드 백업 만들기')
-    ap.add_argument('--row', type=Path, nargs='*', help='로우 파일들 (기본: raw 폴더의 xlsb · csv · xlsx 전부, 수정시각 순)')
+    ap.add_argument('--row', type=Path, nargs='*', help='원천 파일들 — 로우 · 사이트검색 리포트 (기본: raw 폴더의 xlsb · csv · xlsx 전부, 수정시각 순)')
     ap.add_argument('--base', type=Path, help='이어 붙일 기존 백업(.json.gz)')
     ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외')
     ap.add_argument('--out-stamp', help='파일명 날짜 (기본: 로우 최신일)')
@@ -624,7 +736,8 @@ def main(argv=None):
     base = read_backup(a.base) if a.base else None
     if not rows and not base:
         sys.exit(f'원천 파일이 없습니다. {RAW_DIR} 에 로우 파일(xlsb · csv · xlsx)을 넣거나 --row 로 지정하세요.')
-    log(f'로우: {[Path(p).name for p in rows] or "(없음)"}' + (f' / 기존 백업: {a.base.name}' if base else ''))
+    log(f'build_data.py 버전: {BUILD_VERSION}')
+    log(f'원천: {[Path(p).name for p in rows] or "(없음)"}' + (f' / 기존 백업: {a.base.name}' if base else ''))
     try:
         payload = build(rows, base=base, lite=a.lite)
     except ValueError as e:

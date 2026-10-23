@@ -3,7 +3,7 @@
 
     python tests/make_sample.py <출력폴더>
       → sample_row.pkl (로우 시트 형태, 2025-01-01~2026-09-29) · sample_row_1001.pkl (2026-09-29~10-04, 추가분)
-        · sample_row_2024.pkl (2024년, 24년 원천처럼 일부 지표 컬럼 없음)
+        · sample_row_2024.pkl (2024년, 24년 원천처럼 일부 지표 컬럼 없음) · sample_site.pkl (사이트검색 리포트, 2026-09-01~10-04)
     python build_data.py --row <출력폴더>/sample_row.pkl
 """
 from __future__ import annotations
@@ -72,6 +72,30 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
 COLS_2024_MISSING = ['지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액', '지표_총결제고객수(윈백)', '지표_비회원UV']
 
 
+# 사이트검색 리포트(숨김_AF코드성과 시트) — 로우 컬럼에서 '구분_' · '지표_' 를 뺀 이름, 날짜 = '날짜', 광고유형 '-'
+SITE_COLS = ['월별', '주차', '날짜', '보고_캠페인', '보고_그룹', '브랜드', ' 카테고리 ', ' 구분 ', 'AF코드명', '비용출처', '광고유형', '캠페인',
+             '하위캠페인', '디바이스', '채널', '매체명', '브랜드/기획전', '키워드(소재)', '기간', '노출수', '클릭수', '광고비', 'UV(전체)', 'UV(회원)',
+             '가입회원', '총결제고객수(첫구매)', '순결제고객수', '총결제거래액(첫구매)', '총결제거래액', '순결제거래액', '당년신규순결제고객수',
+             '당년신규순결제거래액', '총결제고객수', '순결제고객수(첫구매)', '총결제고객수(윈백)']
+SITE_SPEC = [('자사', '닥스-골프', '닥스', '골프', '확장소재', 'NEW[브랜드]_1_주력MAIN', '확장소재_쇼핑검색', .6),
+             ('입점', '-', '', '-', '확장소재', '-', '확장소재_쇼핑검색', .3),
+             ('자사', '헤지스-남성', '헤지스', '남성', '파워링크', '헤지스_파워링크', '-', .5)]
+
+
+def make_site(start='2026-09-01', end='2026-10-04', seed=5) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    rows = []
+    for d in pd.date_range(start, end, freq='D'):
+        for rc, rg, br, cat, kind, camp, sub, w in SITE_SPEC:
+            for kw in ('키워드A', '키워드B'):
+                fp = int(rng.poisson(6 * w)); buy = fp + int(rng.poisson(40 * w)); uv = int(rng.poisson(900 * w))
+                rows.append([f'{d.year}년{d.month:02d}월', '-', d.strftime('%Y-%m-%d'), rc, rg, br, f' {cat} ', f' {kind} ', '-', '-', '-', camp,
+                             sub, '-', '사이트검색광고', '네이버', '-', kw, int(d.strftime('%Y%m%d')), 1000, 50, f'{round(900_000 * w)} ', uv,
+                             int(uv * .4), int(rng.poisson(15 * w)), fp, buy, fp * 70_000, buy * 80_000, buy * 72_000, int(fp * .7),
+                             int(fp * .7) * 65_000, buy, int(fp * .8), int(rng.poisson(3 * w))])
+    return pd.DataFrame(rows, columns=SITE_COLS)
+
+
 def main(out: Path):
     out.mkdir(parents=True, exist_ok=True)
     make_row().to_pickle(out / 'sample_row.pkl')
@@ -81,6 +105,7 @@ def main(out: Path):
     add['지표_UV(회원)'] = add['지표_UV(전체)'] - add['지표_비회원UV']
     add.drop(columns=['지표_비회원UV']).to_pickle(out / 'sample_row_1001.pkl')
     make_row('2024-01-01', '2024-12-31', seed=3, source='2024.xlsx').drop(columns=COLS_2024_MISSING).to_pickle(out / 'sample_row_2024.pkl')
+    make_site().to_pickle(out / 'sample_site.pkl')       # 사이트검색 리포트 9/1~10/4
     print('sample →', out)
 
 

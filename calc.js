@@ -347,14 +347,23 @@
 
   // ── 백업 합치기 ────────────────────────────────────────────────────
   // 브라우저에 저장된 백업(base)에 새로 만든 백업(add)을 합친다. add 에 있는 날짜는 add 값으로 교체, 나머지는 base 유지
+  //  사이트검색 리포트(siteDates = 사이트검색광고가 리포트 값인 날짜):
+  //  - add 가 리포트만으로 만든 백업(partial)이면 그 날짜의 사이트검색광고만 바꾸고, base 에 없는 날짜는 넣지 않는다
+  //  - add 가 로우로 날짜를 바꿔도 base 에 리포트 값이 있고 add 에는 없으면 사이트검색광고는 base 값을 유지
+  const SITE_TYPE = '사이트검색광고';
   function mergeBackup(base, add) {
     if (!base || !base.row) return add;
     if (!add || !add.row) return base;
-    const B = base.row, A = add.row, addDates = new Set(A.dates);
+    const B = base.row, A = add.row, partial = !!A.partial;
+    const bDates = new Set(B.dates), bSite = new Set(B.siteDates || []), aSite = new Set(A.siteDates || []);
+    const addDates = new Set(partial ? A.dates.filter(d => bDates.has(d)) : A.dates);
+    const isSite = (S, i) => S.f.t && S.dims.t[S.f.t[i]] === SITE_TYPE;
+    // 행 단위로 남길지: base 는 add 가 바꾸지 않는 날짜 · 유형, add 는 base 가 지키는 사이트검색광고를 뺀 나머지
+    const keepB = (i, d) => !addDates.has(d) || (partial ? !isSite(B, i) : (isSite(B, i) && bSite.has(d) && !aSite.has(d)));
+    const keepA = (i, d) => addDates.has(d) && (partial || !(isSite(A, i) && bSite.has(d) && !aSite.has(d)));
     const dimKeys = [...new Set([...Object.keys(B.dims), ...Object.keys(A.dims)])];
     const metKeys = [...new Set([...Object.keys(B.f), ...Object.keys(A.f)])].filter(k => k !== 'd' && !dimKeys.includes(k));
-    const keepB = B.dates.map(d => !addDates.has(d));
-    const dates = [...B.dates.filter((d, i) => keepB[i]), ...A.dates].sort();
+    const dates = [...new Set([...B.dates, ...addDates])].sort();
     const dIx = new Map(dates.map((d, i) => [d, i]));
     // 차원 값 사전 합치기 (광고유형은 고정 순서)
     const dims = {}, remap = { B: {}, A: {} };
@@ -370,39 +379,47 @@
     const push = (S, side, keep) => {
       const n = S.f.d.length;
       for (let i = 0; i < n; i++) {
-        const di = S.f.d[i];
-        if (keep && !keep[di]) continue;
-        f.d.push(dIx.get(S.dates[di]));
+        const d = S.dates[S.f.d[i]];
+        if (!keep(i, d)) continue;
+        f.d.push(dIx.get(d));
         for (const k of dimKeys) f[k].push(S.f[k] ? remap[side][k][S.f[k][i]] : remap[side][k][0]);
         for (const m of metKeys) f[m].push(S.f[m] ? S.f[m][i] : 0);
       }
     };
     push(B, 'B', keepB);
-    push(A, 'A', null);
-    // '데이터 없음' 날짜: base 의 남은 날짜 + add 날짜 (한쪽에 지표 컬럼이 아예 없으면 그쪽 날짜 전부)
+    push(A, 'A', keepA);
+    // '데이터 없음' 날짜: base 의 남은 날짜 + add 날짜 (한쪽에 지표 컬럼이 아예 없으면 그쪽 날짜 전부). 리포트만 담은 add 는 '데이터 없음'을 바꾸지 않는다
+    const full = partial ? new Set() : addDates;
     const na = {};
     for (const m of metKeys) {
       const set = new Set();
-      if (B.f[m]) (B.na && B.na[m] || []).forEach(d => { if (!addDates.has(d)) set.add(d); });
-      else B.dates.forEach((d, i) => { if (keepB[i]) set.add(d); });
-      if (A.f[m]) (A.na && A.na[m] || []).forEach(d => set.add(d));
-      else A.dates.forEach(d => set.add(d));
+      if (B.f[m]) (B.na && B.na[m] || []).forEach(d => { if (!full.has(d)) set.add(d); });
+      else B.dates.forEach(d => { if (!full.has(d)) set.add(d); });
+      if (!partial) {
+        if (A.f[m]) (A.na && A.na[m] || []).forEach(d => set.add(d));
+        else A.dates.forEach(d => set.add(d));
+      }
       if (set.size) na[m] = [...set].sort();
     }
+    const siteDates = [...new Set([...[...bSite].filter(d => dIx.has(d)), ...[...aSite].filter(d => addDates.has(d))])].sort();
     const sb = (base.source || {}).row || {}, sa = (add.source || {}).row || {};
     const ub = sb.unclassified || {}, ua = sa.unclassified || {};
-    const files = [...(sb.files || []), ...(sa.files || [])];
+    const files = [...(sb.files || []), ...(partial ? [] : (sa.files || []))];
     const row = {
       files, file: files.slice(-3).join(', '), rows: f.d.length, from: dates[0], to: dates[dates.length - 1], days: dates.length,
-      unclassified: { rows: (ub.rows || 0) + (ua.rows || 0), cost: (ub.cost || 0) + (ua.cost || 0), join: (ub.join || 0) + (ua.join || 0),
+      unclassified: partial ? ub : { rows: (ub.rows || 0) + (ua.rows || 0), cost: (ub.cost || 0) + (ua.cost || 0), join: (ub.join || 0) + (ua.join || 0),
         adtypes: [...new Set([...(ub.adtypes || []), ...(ua.adtypes || [])])] },
       na: Object.fromEntries(Object.entries(na).map(([m, v]) => [m, { from: v[0], to: v[v.length - 1], days: v.length }])),
     };
-    const replaced = B.dates.filter(d => addDates.has(d)).length;
+    const site = sa.site || sb.site;
+    if (site) row.site = { ...site, total: siteDates.length, files: [...new Set([...((sb.site || {}).files || []), ...((sa.site || {}).files || [])])] };
+    const replaced = A.dates.filter(d => bDates.has(d)).length;
+    const out = { dates, dims, f, n: f.d.length, na };
+    if (siteDates.length) out.siteDates = siteDates;
     return {
       format: add.format, version: add.version, created: add.created, lastDate: dates[dates.length - 1],
-      source: { ...(base.source || {}), row }, row: { dates, dims, f, n: f.d.length, na },
-      merged: { added: A.dates.length - replaced, replaced, kept: dates.length - A.dates.length },
+      source: { ...(base.source || {}), row }, row: out,
+      merged: { added: dates.length - B.dates.length, replaced, kept: dates.length - addDates.size, site: partial ? addDates.size : 0, skipped: partial ? A.dates.length - addDates.size : 0 },
     };
   }
 

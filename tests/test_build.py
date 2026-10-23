@@ -130,6 +130,47 @@ def test_member_uv_gives_non_member_uv(sample, payload):
     assert new['uvn'].sum() > 0 and 'uvn' not in p2['row'].get('na', {})
 
 
+def test_site_report_replaces_site_search_rows(sample):
+    # 사이트검색 리포트가 있는 날짜는 로우의 사이트검색광고 행 대신 리포트 행 — 다른 유형은 그대로
+    files = [sample / 'sample_row.pkl', sample / 'sample_row_1001.pkl']
+    p0, p1 = bd.build(files), bd.build(files + [sample / 'sample_site.pkl'])
+    a, b = frame(p0['row']), frame(p1['row'])
+    site = bd.prep_row(bd.load_row_raw(sample / 'sample_site.pkl'), 'site')
+    assert bd.source_kind(sample / 'sample_site.pkl') == 'site' and bd.source_kind(sample / 'sample_row.pkl') == 'row'
+    on = lambda f: f[(f['date'] >= '2026-09-01') & (f['t'] == bd.SITE_TYPE)]
+    for m in ('cost', 'fp', 'fpr', 'nrev', 'uvn'):
+        assert on(b)[m].sum() == pytest.approx(site[m].sum(), abs=1), m
+    assert on(a)['cost'].sum() != pytest.approx(on(b)['cost'].sum())
+    other = lambda f: f[f['t'] != bd.SITE_TYPE].groupby('t')['cost'].sum()
+    assert np.allclose(other(a), other(b))
+    before = lambda f: f[(f['date'] < '2026-09-01') & (f['t'] == bd.SITE_TYPE)]['cost'].sum()
+    assert before(a) == pytest.approx(before(b))
+    assert set(b[b['t'] == bd.SITE_TYPE]['rcamp']) >= {'자사', '입점'} and '골프' in set(b['cat']) and '확장소재' in set(b['kind'])
+    assert '닥스' in set(b['bp'])                       # 브랜드/기획전 '-' → 브랜드
+    assert len(p1['row']['siteDates']) == 34 and p1['row']['siteDates'][0] == '2026-09-01'
+    info = p1['source']['row']['site']
+    assert info['days'] == 34 and info['cmp']['cost'][1] == pytest.approx(site['cost'].sum(), abs=1)
+    assert 'partial' not in p1['row']
+
+
+def test_site_rows_kept_when_row_file_replaces_dates(sample):
+    # 리포트가 들어간 백업에 로우만 새로 넣어도(같은 날짜 교체) 사이트검색광고는 리포트 값을 유지
+    p1 = bd.build([sample / 'sample_row.pkl', sample / 'sample_site.pkl'])
+    p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(bd.to_json(p1)))
+    a, b = frame(p1['row']), frame(p2['row'])
+    d = pd.Timestamp('2026-09-29')
+    sa, sb = a[(a['date'] == d) & (a['t'] == bd.SITE_TYPE)], b[(b['date'] == d) & (b['t'] == bd.SITE_TYPE)]
+    assert sb['cost'].sum() == pytest.approx(sa['cost'].sum(), abs=1) and set(sb['rcamp']) == set(sa['rcamp'])
+    assert b[(b['date'] == d) & (b['t'] == 'DA')]['cost'].sum() != pytest.approx(a[(a['date'] == d) & (a['t'] == 'DA')]['cost'].sum())
+    assert '2026-09-29' in p2['row']['siteDates']
+
+
+def test_site_report_only_is_partial(sample):
+    p = bd.build([sample / 'sample_site.pkl'])
+    assert p['row']['partial'] == {'types': [bd.SITE_TYPE]} and p['row']['dims']['t'] == [bd.SITE_TYPE]
+    assert p['source']['row']['site']['cmp']['cost'][0] is None
+
+
 def test_2024_file_missing_columns_marked_na(sample):
     p = bd.build([sample / 'sample_row_2024.pkl', sample / 'sample_row.pkl'])
     na = p['row']['na']

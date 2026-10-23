@@ -186,7 +186,7 @@ test('브라우저 합치기 = 한 번에 빌드한 결과 (새 파일 날짜는
   const mg = C.mergeBackup(base, add);
   assert.deepEqual(mg.row.dates, full.row.dates);
   assert.deepEqual(mg.row.na, full.row.na);
-  assert.deepEqual(mg.merged, { added: 5, replaced: 1, kept: base.row.dates.length - 1 });
+  assert.deepEqual(mg.merged, { added: 5, replaced: 1, kept: base.row.dates.length - 1, site: 0, skipped: 0 });
   assert.equal(mg.source.row.to, '2026-10-04'); assert.equal(mg.source.row.from, '2024-01-01');
   for (const key of [(r, i) => r.dates[r.f.d[i]] + '|' + r.dims.t[r.f.t[i]], (r, i) => r.dims.bp[r.f.bp[i]] + '|' + r.dims.dev[r.f.dev[i]] + '|' + r.dims.camp[r.f.camp[i]]]) {
     const a = sumBy(mg, key), b = sumBy(full, key);
@@ -199,7 +199,28 @@ test('브라우저 합치기 = 한 번에 빌드한 결과 (새 파일 날짜는
   // 같은 파일을 두 번 합쳐도 결과가 같다 (날짜 교체라 중복 집계 없음)
   const mg2 = C.mergeBackup(mg, add);
   assert.equal(mg2.row.n, mg.row.n);
-  assert.deepEqual(mg2.merged, { added: 0, replaced: 6, kept: mg.row.dates.length - 6 });
+  assert.deepEqual(mg2.merged, { added: 0, replaced: 6, kept: mg.row.dates.length - 6, site: 0, skipped: 0 });
+});
+
+test('브라우저 합치기: 사이트검색 리포트 = 한 번에 빌드한 결과', () => {
+  const key = (r, i) => r.dates[r.f.d[i]] + '|' + r.dims.t[r.f.t[i]] + '|' + r.dims.rcamp[r.f.rcamp[i]];
+  const same = (a, b) => { const x = sumBy(a, key), y = sumBy(b, key); assert.equal(x.size, y.size); for (const [k, v] of y) near(x.get(k), v, 1e-6); };
+  // 로우 백업 + 리포트만 만든 백업(partial) — 리포트 날짜 중 로우에 없는 10/1~10/4 는 빠진다
+  const row = buildFiles(['sample_row.pkl']), site = buildFiles(['sample_site.pkl']);
+  assert.deepEqual(site.row.partial, { types: ['사이트검색광고'] });
+  const mg = C.mergeBackup(row, site), full = buildFiles(['sample_row.pkl', 'sample_site.pkl']);
+  assert.deepEqual(mg.row.dates, row.row.dates); assert.deepEqual(mg.row.siteDates, full.row.siteDates);
+  assert.equal(mg.merged.site, 29); assert.equal(mg.merged.skipped, 5);
+  assert.deepEqual(mg.row.na, full.row.na);
+  same(mg, full);
+  // 리포트가 들어간 데이터에 로우만 새로 합쳐도 겹친 날짜(9/29)의 사이트검색광고는 리포트 값 유지
+  const add = buildFiles(['sample_row_1001.pkl']);
+  const mg2 = C.mergeBackup(mg, add);
+  assert.deepEqual(mg2.row.siteDates, mg.row.siteDates);          // 9/30~10/4 는 리포트가 저장되지 않았던 날짜 → 로우 값
+  assert.equal(mg2.row.dates.at(-1), '2026-10-04');
+  const s29 = (P, t) => [...sumBy(P, key)].filter(([k]) => k.startsWith('2026-09-29|' + t)).reduce((a, [, v]) => a + v, 0);
+  near(s29(mg2, '사이트검색광고'), s29(mg, '사이트검색광고'), 1e-6);
+  near(s29(mg2, 'DA'), s29(add, 'DA'), 1e-6);
 });
 
 test('합치기: 저장된 데이터가 없으면 새 백업 그대로', () => {
