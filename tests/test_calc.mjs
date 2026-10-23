@@ -93,7 +93,7 @@ test('기대치: 드릴다운(트리 합계)과 상단(일자 시리즈) 값이 
     refBase: C.rangeIdx(R, '2025-07-01', '2025-09-30'), refRecent: C.rangeIdx(R, '2025-10-01', '2025-10-04'),
   };
   const series = C.daily(R).get('_');
-  const keys = ['fpr', 'nrev', 'jr', 'fpj', 'fcpa', 'fp', 'join', 'uvn'];
+  const keys = ['fpr', 'nrev', 'jr', 'fpj', 'fpv', 'fcpa', 'fp', 'join', 'uvn'];
   const top = C.baseline(R, series, rg, keys).rows;
   const es = C.expSets(R, rg), mets = [...new Set(keys.flatMap(k => C.METRIC[k].base))];
   const t = C.tree(R, { dims: ['t'], sets: es.sets, mets });
@@ -102,7 +102,9 @@ test('기대치: 드릴다운(트리 합계)과 상단(일자 시리즈) 값이 
     assert.equal(r.exKind, 'adj', k);
     near(r.ex, top[k].ex, 1e-6); near(r.base, top[k].base, 1e-6); near(r.recent, top[k].recent, 1e-6);
   }
-  near(top.fpj.ex, top.fp.ex / top.join.ex, 1e-9);     // 첫구매율 = 첫구매객수 ÷ 가입
+  near(top.fpj.ex, top.fp.ex / top.join.ex, 1e-9);     // 가입첫구매전환율 = 첫구매객수 ÷ 가입자수
+  near(top.fpv.ex, top.fp.ex / top.uvn.ex, 1e-9);      // 첫구매전환율 = 첫구매객수 ÷ 비회원UV
+  near(top.fpv.recent, C.div(C.sumIdx(series, rg.recent, ['fp']).fp, C.sumIdx(series, rg.recent, ['uvn']).uvn), 1e-12);
   near(top.jr.ex, top.join.ex / top.uvn.ex, 1e-9);     // 가입률 = 가입 ÷ 비회원UV
   near(top.jr.recent, C.div(C.sumIdx(series, rg.recent, ['join']).join, C.sumIdx(series, rg.recent, ['uvn']).uvn), 1e-12);
 });

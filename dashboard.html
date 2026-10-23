@@ -93,13 +93,14 @@ select{cursor:pointer;max-width:260px}
 /* 요약 타일 */
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 @media (min-width:1000px){.tiles{grid-template-columns:repeat(var(--tc,5),minmax(0,1fr))}}
-@media (min-width:1200px){.tiles.t8{--tc:8}}   /* 추이 · 첫구매 진단 카드 15개 = 8 + 7 */
+@media (min-width:1200px){.tiles.t8{--tc:8}}   /* 추이 · 첫구매 진단 카드 16개 = 8 + 8 */
 @media (min-width:1000px) and (max-width:1439px){.tiles.t8w{--tc:5}}   /* 첫구매 진단 카드는 줄 이름이 길어 넓은 화면에서만 8열 */
 .tile.hl{background:var(--wash)}
 .tiles.t8w .tile{padding-inline:12px}
 .tiles.t8w .t-r{font-size:11.5px;gap:4px}
 .tile{padding:12px 14px 11px;box-shadow:1px 0 0 var(--grid),0 1px 0 var(--grid)}
 .t-l{font-size:12px;color:var(--ink-2)}
+.t-d{font-size:10.5px;color:var(--muted);min-height:14px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* 산식 설명 — 없는 카드도 줄을 비워 두어 값 위치를 맞춘다 */
 .t-v{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:2px 0 4px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .t-v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:3px}
 .t-r{display:flex;justify-content:space-between;gap:6px;white-space:nowrap;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -789,10 +790,11 @@ function renderTrend(main) {
   $id('tiles').innerHTML = C.METRICS.map(m => {
     const v = periodVal(m, T, X.cur), c = periodVal(m, T, cmpAt);
     const d1 = fmtD(v, c, m.lowerBetter);
-    return `<div class="tile${HL_METS.has(m.k) ? ' hl' : ''}"><div class="t-l">${m.n}</div>
-      <div class="t-v">${C.fmt(m.kind, v)}${v != null && m.kind !== 'ratio' ? `<small>${unitS(m)}</small>` : ''}</div>
+    const tf = x => C.fmt(m.kind, x, m.kind === 'ratio' && x != null && Math.abs(x) < 0.01 ? { dp: 2 } : {});   // 1% 미만 비율은 소수 2자리
+    return `<div class="tile${HL_METS.has(m.k) ? ' hl' : ''}"><div class="t-l">${m.n}</div><div class="t-d">${esc(m.d || '')}</div>
+      <div class="t-v">${tf(v)}${v != null && m.kind !== 'ratio' ? `<small>${unitS(m)}</small>` : ''}</div>
       <div class="t-r"><span>${X.label}</span><b class="${d1.c}">${d1.t}</b></div>
-      <div class="t-r"><span>${X.name}</span><span>${C.fmt(m.kind, c)}</span></div></div>`;
+      <div class="t-r"><span>${X.name}</span><span>${tf(c)}</span></div></div>`;
   }).join('');
 
   // 같은 눈금: 모든 카드의 값 범위를 합쳐 하나로
@@ -1184,7 +1186,7 @@ function notesTrend() {
     <li>DA(페이먼츠): DA 중 매체 PAYCO·토스 + 채널 링크사(링크프라이스·다음제휴) / DA: 그 외 DA(포탈·SNS·생활밀착형앱)</li>
     <li>메시지: 광고유형 Message · PA: 광고유형 PA(상품피드) · 합계 = 선택한 유형의 합</li>
     <li>미분류(APP·viral·'-') 제외: ${(un.rows || 0).toLocaleString()}행 · 광고비 ${C.fmt('money', un.cost || 0)}백만원 · 가입 ${(un.join || 0).toLocaleString()}명 (전체 기간)</li>
-    <li>UV = UV(전체) · 비회원UV = UV(비회원) · <b>가입률 = 가입 ÷ 비회원UV</b> · <b>첫구매전환율 = 첫구매객수 ÷ UV</b> · 구매고객수 = 총결제고객수 (비율은 합계 ÷ 합계)</li>
+    <li>UV = UV(전체) · 비회원UV = UV(비회원) · <b>가입률 = 가입 ÷ 비회원UV</b> · <b>첫구매전환율 = 첫구매객수 ÷ 비회원UV</b> · <b>가입첫구매전환율 = 첫구매객수 ÷ 가입자수</b> · 구매고객수 = 총결제고객수 (비율은 합계 ÷ 합계)</li>
     <li><b>첫구매객수 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · 순결제거래액 = 순결제거래액(전체) · <b>순결제ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계) · 첫구매거래액 · 신규거래액 카드는 연한 파랑으로 강조</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
     <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(진회색 실선) · 전전년(회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
@@ -1375,7 +1377,7 @@ function expDetail(bl, k, refY) {
     <li><b>왜 요일 구성을 맞추나</b> — 평일과 주말·휴일 실적 수준이 다르다. 최근 구간에 쉬는 날이 많으면 그것만으로 일평균이 달라지므로, 베이스라인을 평일 평균 / 주말·휴일 평균으로 나눈 뒤 최근 구간의 평일 · 주말·휴일 일수로 다시 가중한다. 공휴일은 주말과 같은 묶음이다.</li>
     <li><b>왜 ${y}년도 같은 방식으로 맞추나</b> — ${y}년 최근 구간에도 명절 · 연휴가 몰려 있을 수 있다. 그대로 나누면 계절 배수에 "그해는 쉬는 날이 많았다"는 효과가 섞이므로, ${y}년 베이스라인도 ${y}년 최근 구간의 요일 구성으로 맞춘 뒤 나눈다. 그래서 계절요일보정 값에는 요일 효과는 올해 구성만, 계절 효과는 ${y}년 증감만 들어간다.</li>
     <li><b>왜 요일 7개가 아니라 두 묶음인가</b> — 베이스라인 안에서도 요일별로는 날이 적어 평균이 흔들린다. 평일 / 주말·휴일 두 묶음이 안정성과 보정 효과의 절충이다.</li>
-    <li><b>비율 · CPA</b> — 분자 계절요일보정 ÷ 분모 계절요일보정 (예: 첫구매율 = 첫구매객수 계절요일보정 ÷ 가입 계절요일보정).</li></ul>
+    <li><b>비율 · CPA</b> — 분자 계절요일보정 ÷ 분모 계절요일보정 (예: 가입첫구매전환율 = 첫구매객수 계절요일보정 ÷ 가입 계절요일보정).</li></ul>
     <div style="margin:8px 0 2px;font-weight:600">이번 화면 값으로 계산 (${esc(M.n)} ${esc(dgUnit(M.kind))})</div>${live}
     <p class="hint">한계: 명절은 주말보다 실적이 더 크게 빠질 수 있는데 같은 묶음으로 보므로 명절 효과는 일부 남는다. 공휴일 목록(calc.js HOLIDAYS)에 없는 날은 평일로 계산된다.</p>
     </div></details>`;
@@ -1419,8 +1421,10 @@ function diagCard(bl, F, mv) {
   const cost = v('cost'), fcpa = v('fcpa');
   const eff = cost == null || fcpa == null ? '' : fcpa > 0.5 ? ' → 첫구매CPA가 계절요일보정보다 비쌈(효율 악화)' : fcpa < -0.5 ? ' → 첫구매CPA가 계절요일보정보다 쌈(효율 개선)' : ' → 첫구매CPA 계절요일보정 수준';
   return `${line(`첫구매거래액 계절요일보정 대비 ${pctB(v('fpr'))} = 첫구매객수 ${pctB(v('fp'))} × 첫구매 객단가 ${pctB(aov)}`, [
-      `첫구매객수 ${pctB(v('fp'))} = 유입(UV) ${pctB(v('uv'))} × 전환율(첫구매 ÷ UV) ${pctB(v('fpu'))}${driver(v('fp'), [['유입(UV)', v('uv')], ['전환율', v('fpu')]])}`,
-      v('join') != null && v('fpj') != null ? `첫구매객수 ${pctB(v('fp'))} = 가입 ${pctB(v('join'))} × 첫구매율(첫구매 ÷ 가입) ${pctB(v('fpj'))}${driver(v('fp'), [['가입', v('join')], ['첫구매율', v('fpj')]])}` : '',
+      v('uvn') != null && v('fpv') != null
+        ? `첫구매객수 ${pctB(v('fp'))} = 비회원UV ${pctB(v('uvn'))} × 첫구매전환율(첫구매객수 ÷ 비회원UV) ${pctB(v('fpv'))}${driver(v('fp'), [['비회원UV', v('uvn')], ['첫구매전환율', v('fpv')]])}`
+        : `첫구매객수 ${pctB(v('fp'))} = 유입(UV) ${pctB(v('uv'))} × 전환율(첫구매객수 ÷ UV) ${pctB(v('fpu'))}${driver(v('fp'), [['유입(UV)', v('uv')], ['전환율', v('fpu')]])}`,
+      v('join') != null && v('fpj') != null ? `첫구매객수 ${pctB(v('fp'))} = 가입 ${pctB(v('join'))} × 가입첫구매전환율(첫구매객수 ÷ 가입자수) ${pctB(v('fpj'))}${driver(v('fp'), [['가입', v('join')], ['가입첫구매전환율', v('fpj')]])}` : '',
       v('uvn') != null && v('jr') != null ? `가입 ${pctB(v('join'))} = 비회원UV ${pctB(v('uvn'))} × 가입률 ${pctB(v('jr'))}${driver(v('join'), [['비회원UV', v('uvn')], ['가입률', v('jr')]])}` : '',
       moveLines(mv.fpr.md, '매체별'), moveLines(mv.fpr.camp, '매체 상세(캠페인)'),
     ], driver(v('fpr'), [['첫구매객수', v('fp')], ['첫구매 객단가', aov]]))}
@@ -1485,7 +1489,7 @@ function renderDiag(main) {
   }
   const F = S.diag, DT = dgDates(), rg = dgRanges(), src = P.source.row || {}, mets = dgMets();
   const series = C.daily(R, { where: dgWhere() }).get('_') || C.addSeries([], C.ROW_METS, R.dates.length);
-  const bl = C.baseline(R, series, rg, [...new Set([...DG_METS, 'fps', 'fpj'])]), rows = bl.rows;
+  const bl = C.baseline(R, series, rg, [...new Set([...DG_METS, 'fps', 'fpu'])]), rows = bl.rows;
   const filt = filterSummary() || '광고 전체';
   const hasRef = rg.refBase.length > 0 && rg.refRecent.length > 0;
   const years = Object.entries(R.dates.reduce((a, d) => { const y = d.slice(0, 4); a[y] = (a[y] || 0) + 1; return a; }, {}));
@@ -1493,7 +1497,7 @@ function renderDiag(main) {
   let h = `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">최근 일평균 · 비율은 합계 ÷ 합계 · 대비 % 옆 숫자 = 베이스라인 / 계절요일보정 값</span></div>
     <div class="tiles t8 t8w">${DG_METS.map(k => {
       const M = C.METRIC[k], r = rows[k], lb = M.lowerBetter;
-      return `<div class="tile${HL_METS.has(k) ? ' hl' : ''}"><div class="t-l">${esc(M.n)}</div>
+      return `<div class="tile${HL_METS.has(k) ? ' hl' : ''}"><div class="t-l">${esc(M.n)}</div><div class="t-d">${esc(M.d || '')}</div>
         <div class="t-v">${dgFmt(M.kind, r.recent)}${r.recent != null && M.kind !== 'ratio' ? `<small>${dgUnit(M.kind)}</small>` : ''}</div>
         <div class="t-r"><span>베이스라인 대비</span><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b></div>
         <div class="t-r"><span>${exName(r)} 대비</span><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b></div>
@@ -1528,7 +1532,7 @@ function renderDiag(main) {
     <div class="sec-h"><h2 style="font-size:13px">월별 ${esc(CM.rn)} — 시즌 항목 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="dgBrMon" data-name="첫구매진단_시즌_월별">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
-      <li>구매고객 = 총결제고객수 · 첫구매객수 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매 전환율 = 첫구매 ÷ UV(전체) · 첫구매 객단가 = 첫구매거래액 ÷ 첫구매객수 · 신규 객단가 = 신규거래액 ÷ 신규고객수</li>
+      <li>구매고객 = 총결제고객수 · 첫구매객수 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매전환율 = 첫구매객수 ÷ 비회원UV · 가입첫구매전환율 = 첫구매객수 ÷ 가입자수 · 첫구매 객단가 = 첫구매거래액 ÷ 첫구매객수 · 신규 객단가 = 신규거래액 ÷ 신규고객수</li>
       <li>구성 효과 분해 기준: 첫구매거래액 ÷ 총결제거래액 · 신규거래액 ÷ 순결제거래액 · 첫구매객수 ÷ 구매고객</li>
       <li>"개선 없음" ≠ "유지": 계절요일보정을 못 넘으면 "계절요일보정 대비 -x%", 비중이 내려가면 악화로 판정</li>
       <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
