@@ -118,6 +118,8 @@ def excel_serial_to_date(s: pd.Series) -> pd.Series:
 CHUNK = 20_000                                     # 큰 원천은 이 행 수씩 나눠 읽고 바로 합산 (메모리 절약)
 WANT = [ROW_DATE, *ROW_DIMS, *ROW_METRICS, ROW_MEMBER_UV]
 DIM_KEYS = list(ROW_DIMS.values())
+WANT_SET = set(WANT)
+WANT_KEY = {c.replace(' ', ''): c for c in WANT}     # 공백 뺀 이름 → 표준 이름
 
 
 def sniff_csv(path: Path):
@@ -169,8 +171,12 @@ def read_csv_any(path: Path) -> pd.DataFrame:
 
 
 def canon(c) -> str:
+    """원천 헤더 → 표준 이름. 전각 괄호 · 공백 차이(예: '지표_UV （회원）')도 같은 컬럼으로 본다"""
     c = str(c).strip() if c is not None else ''
-    return ROW_ALIASES.get(c, c)
+    if c in WANT_SET:
+        return c
+    k = c.replace('（', '(').replace('）', ')').replace(' ', '')
+    return ROW_ALIASES.get(k, WANT_KEY.get(k, c))
 
 
 def _norm(df: pd.DataFrame, name: str) -> pd.DataFrame:

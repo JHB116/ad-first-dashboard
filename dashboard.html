@@ -98,6 +98,7 @@ select{cursor:pointer;max-width:260px}
 .t-l{font-size:12px;color:var(--ink-2)}
 .t-v{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:2px 0 4px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .t-v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:3px}
+.t-c{font-size:11px;color:var(--muted);margin-top:3px}
 .t-r{display:flex;justify-content:space-between;gap:6px;white-space:nowrap;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .t-r b{font-weight:600;color:var(--ink)}
 .t-r.t-ex{margin-top:2px;align-items:flex-end}
@@ -1152,7 +1153,7 @@ const MET_NAME = { cost: '광고비', uv: 'UV', uvn: '비회원UV', join: '가�
 function naNote() {
   const na = (P.source.row || {}).na || {};
   const items = Object.entries(na).map(([m, v]) => `${MET_NAME[m] || m} ${ymd(v.from)}~${ymd(v.to)}(${v.days}일)`);
-  return items.length ? `<li><b>데이터 없음</b>(원천에 컬럼이 없던 기간 — 그 기간이 낀 값은 '–'): ${esc(items.join(' · '))}</li>` : '';
+  return items.length ? `<li><b>데이터 없음</b>(원천에 컬럼이 없던 기간 — 그 기간이 낀 값은 '–'): ${esc(items.join(' · '))}${na.uvn ? ' — 비회원UV 는 원천의 UV(비회원) 또는 UV(회원) 칸으로 계산한다. 그 기간 원천에 칸이 있는데도 여기 보이면 그 원천으로 백업을 다시 만들어 올린다(이전 버전 build_data.py 로 만든 백업에는 비회원UV 가 없다)' : ''}</li>` : '';
 }
 function notesTrend() {
   const src = P.source.row || {}, un = src.unclassified || {};
@@ -1319,9 +1320,9 @@ const DG_COMP = {
 const dgFmt = (kind, v) => kind === 'ratio' ? C.fmt('ratio', v, { dp: v != null && Math.abs(v) < 0.01 ? 2 : 1 })
   : kind === 'count' ? C.fmtNum(v, v != null && Math.abs(v) >= 1000 ? 0 : 1) : C.fmt(kind, v);
 const dgUnit = kind => kind === 'ratio' ? '' : C.unit(kind, 'avg');
-const exName = r => r.exKind === 'season' ? '기대치(계절)' : '기대치(계절·요일보정)';
+const exName = r => r.exKind === 'season' ? '계절보정' : '계절요일보정';
 
-// 기대치(계절·요일보정) 계산 방식 — 작게 접어 두고, 펼치면 이번 화면 값으로 단계별 계산을 보여 준다
+// 계절요일보정 계산 방식 — 작게 접어 두고, 펼치면 이번 화면 값으로 단계별 계산을 보여 준다
 function expDetail(bl, k, refY) {
   const M = C.METRIC[k], row = bl.rows[k], m = M.base[0], y = esc(refY), f = v => dgFmt(M.kind, v), x = v => v == null || !isFinite(v) ? '–' : v.toFixed(3);
   const avg = j => bl.days[j] ? bl.sums[j][m] / bl.days[j] : null;
@@ -1332,25 +1333,25 @@ function expDetail(bl, k, refY) {
       <li>${y}년 베이스라인 평일 평균 <b>${f(avg(6))}</b> · 주말·휴일 평균 <b>${f(avg(7))}</b> → ${y}년 최근 구간 구성(평일 ${r1}일 · 주말·휴일 ${r2}일)으로 가중:
         (${f(avg(6))}×${r1} + ${f(avg(7))}×${r2}) ÷ ${r1 + r2} = <b>${f(row.refAdj)}</b></li>
       <li>계절 배수 = ${y}년 최근 실제 <b>${f(row.refRecent)}</b> ÷ ${f(row.refAdj)} = <b>×${x(row.seasonAdj)}</b></li>
-      <li>기대치 = ${f(row.adjBase)} × ${x(row.seasonAdj)} = <b>${f(row.expAdj)}</b> → 최근 실제(<b>${f(row.recent)}</b>)는 기대치 대비 <b class="${clsP(row.vsExpAdj, M.lowerBetter)}">${sgn(row.vsExpAdj)}</b></li></ol>`
-    : `<p>이번 화면은 ${row.exp == null ? `${y}년 같은 구간 데이터가 없어 기대치를 계산하지 않았습니다.` : '한 구간에 평일이나 주말·휴일이 하루도 없어 요일 보정 없이 계절만 반영한 기대치(계절)를 씁니다.'}</p>`;
+      <li>계절요일보정 = ${f(row.adjBase)} × ${x(row.seasonAdj)} = <b>${f(row.expAdj)}</b> → 최근 실제(<b>${f(row.recent)}</b>)는 계절요일보정 대비 <b class="${clsP(row.vsExpAdj, M.lowerBetter)}">${sgn(row.vsExpAdj)}</b></li></ol>`
+    : `<p>이번 화면은 ${row.exp == null ? `${y}년 같은 구간 데이터가 없어 계절요일보정을 계산하지 않았습니다.` : '한 구간에 평일이나 주말·휴일이 하루도 없어 요일 보정 없이 계절만 반영한 계절보정을 씁니다.'}</p>`;
   return `<details class="more"><summary>계산 방식</summary><div class="more-body"><ul class="notes">
-    <li><b>왜 기대치와 비교하나</b> — 베이스라인보다 올랐어도 원래 오르는 시기라면 개선이 아니다. ${y}년 같은 날짜 구간이 얼마나 오르내렸는지를 올해 베이스라인에 곱해 "원래 이 정도는 나왔어야 한다"는 기준을 만든다.</li>
+    <li><b>왜 계절요일보정과 비교하나</b> — 베이스라인보다 올랐어도 원래 오르는 시기라면 개선이 아니다. ${y}년 같은 날짜 구간이 얼마나 오르내렸는지를 올해 베이스라인에 곱해 "원래 이 정도는 나왔어야 한다"는 기준을 만든다.</li>
     <li><b>왜 요일 구성을 맞추나</b> — 평일과 주말·휴일 실적 수준이 다르다. 최근 구간에 쉬는 날이 많으면 그것만으로 일평균이 달라지므로, 베이스라인을 평일 평균 / 주말·휴일 평균으로 나눈 뒤 최근 구간의 평일 · 주말·휴일 일수로 다시 가중한다. 공휴일은 주말과 같은 묶음이다.</li>
-    <li><b>왜 ${y}년도 같은 방식으로 맞추나</b> — ${y}년 최근 구간에도 명절 · 연휴가 몰려 있을 수 있다. 그대로 나누면 계절 배수에 "그해는 쉬는 날이 많았다"는 효과가 섞이므로, ${y}년 베이스라인도 ${y}년 최근 구간의 요일 구성으로 맞춘 뒤 나눈다. 그래서 기대치에는 요일 효과는 올해 구성만, 계절 효과는 ${y}년 증감만 들어간다.</li>
+    <li><b>왜 ${y}년도 같은 방식으로 맞추나</b> — ${y}년 최근 구간에도 명절 · 연휴가 몰려 있을 수 있다. 그대로 나누면 계절 배수에 "그해는 쉬는 날이 많았다"는 효과가 섞이므로, ${y}년 베이스라인도 ${y}년 최근 구간의 요일 구성으로 맞춘 뒤 나눈다. 그래서 계절요일보정 값에는 요일 효과는 올해 구성만, 계절 효과는 ${y}년 증감만 들어간다.</li>
     <li><b>왜 요일 7개가 아니라 두 묶음인가</b> — 베이스라인 안에서도 요일별로는 날이 적어 평균이 흔들린다. 평일 / 주말·휴일 두 묶음이 안정성과 보정 효과의 절충이다.</li>
-    <li><b>비율 · CPA</b> — 분자 기대치 ÷ 분모 기대치 (예: 첫구매 비중 기대치 = 첫구매 기대치 ÷ 구매고객 기대치).</li></ul>
+    <li><b>비율 · CPA</b> — 분자 계절요일보정 ÷ 분모 계절요일보정 (예: 첫구매율 = 첫구매객수 계절요일보정 ÷ 가입 계절요일보정).</li></ul>
     <div style="margin:8px 0 2px;font-weight:600">이번 화면 값으로 계산 (${esc(M.n)} ${esc(dgUnit(M.kind))})</div>${live}
     <p class="hint">한계: 명절은 주말보다 실적이 더 크게 빠질 수 있는데 같은 묶음으로 보므로 명절 효과는 일부 남는다. 공휴일 목록(calc.js HOLIDAYS)에 없는 날은 평일로 계산된다.</p>
     </div></details>`;
 }
 
-// 진단 — 기대치 대비 차이를 곱셈 요인으로 나눈다 (실제 ÷ 기대치 = 요인1 ÷ 요인1 기대치 × 요인2 ÷ 요인2 기대치)
+// 진단 — 계절요일보정 대비 차이를 곱셈 요인으로 나눈다 (실제 ÷ 계절요일보정 = 요인마다 실제 ÷ 계절요일보정의 곱)
 const pctB = (p, lb) => p == null ? '<b>–</b>' : `<b class="${clsP(p, lb)}">${sgn(p)}</b>`;
 function driver(tot, parts) {
   if (tot == null || parts.some(([, p]) => p == null)) return '';
   const big = parts.reduce((a, b) => Math.abs(b[1]) > Math.abs(a[1]) ? b : a);
-  if (Math.abs(tot) < 0.5) return Math.abs(big[1]) >= 3 ? ` → 기대치 수준 (${parts.map(([n, p]) => `${n} ${sgn(p)}`).join(' · ')} 서로 상쇄)` : ' → 기대치 수준';
+  if (Math.abs(tot) < 0.5) return Math.abs(big[1]) >= 3 ? ` → 계절요일보정 수준 (${parts.map(([n, p]) => `${n} ${sgn(p)}`).join(' · ')} 서로 상쇄)` : ' → 계절요일보정 수준';
   const main = parts.reduce((a, b) => b[1] * Math.sign(tot) > a[1] * Math.sign(tot) ? b : a);
   const opp = parts.filter(x => x !== main && x[1] * Math.sign(tot) < -0.5);
   return ` → 주로 ${main[0]} 때문${opp.length ? ` (반대 방향: ${opp.map(([n, p]) => `${n} ${sgn(p)}`).join(' · ')})` : ''}`;
@@ -1360,21 +1361,21 @@ function diagCard(bl, F) {
   const aov = ex({ base: ['fpr', 'fp'], f: s => C.div(s.fpr, s.fp) }), naov = ex({ base: ['nrev', 'nb'], f: s => C.div(s.nrev, s.nb) });
   const v = k => r[k].vsEx;
   const line = (h, l2s, tail) => `<div class="h">□ ${h}${tail || ''}</div>${l2s.filter(Boolean).map(x => `<div class="l2">ㄴ ${x}</div>`).join('')}`;
-  // 첫구매 비중 판정은 기대치(계절·요일보정) 대비, 기대치가 없으면 베이스라인 대비 (분석 원칙 1)
+  // 첫구매 비중 판정은 계절요일보정 대비, 계산할 수 없으면 베이스라인 대비 (분석 원칙 1)
   const sh = r.fps, shareRef = sh.vsEx ?? sh.chg, shareBad = shareRef != null && shareRef < -0.5;
   const cost = v('cost'), fcpa = v('fcpa');
-  const eff = cost == null || fcpa == null ? '' : fcpa > 0.5 ? ' → 첫구매CPA 기대치보다 비쌈(효율 악화)' : fcpa < -0.5 ? ' → 첫구매CPA 기대치보다 쌈(효율 개선)' : ' → 첫구매CPA 기대치 수준';
+  const eff = cost == null || fcpa == null ? '' : fcpa > 0.5 ? ' → 첫구매CPA가 계절요일보정보다 비쌈(효율 악화)' : fcpa < -0.5 ? ' → 첫구매CPA가 계절요일보정보다 쌈(효율 개선)' : ' → 첫구매CPA 계절요일보정 수준';
   return `<div class="card pad judge" style="margin-top:12px">
-    ${line(`첫구매거래액 기대치 대비 ${pctB(v('fpr'))} = 첫구매객수 ${pctB(v('fp'))} × 첫구매 객단가 ${pctB(aov)}`, [
+    ${line(`첫구매거래액 계절요일보정 대비 ${pctB(v('fpr'))} = 첫구매객수 ${pctB(v('fp'))} × 첫구매 객단가 ${pctB(aov)}`, [
       `첫구매객수 ${pctB(v('fp'))} = 유입(UV) ${pctB(v('uv'))} × 전환율(첫구매 ÷ UV) ${pctB(v('fpu'))}${driver(v('fp'), [['유입(UV)', v('uv')], ['전환율', v('fpu')]])}`,
       v('join') != null && v('fpj') != null ? `첫구매객수 ${pctB(v('fp'))} = 가입 ${pctB(v('join'))} × 첫구매율(첫구매 ÷ 가입) ${pctB(v('fpj'))}${driver(v('fp'), [['가입', v('join')], ['첫구매율', v('fpj')]])}` : '',
       v('uvn') != null && v('jr') != null ? `가입 ${pctB(v('join'))} = 비회원UV ${pctB(v('uvn'))} × 가입률 ${pctB(v('jr'))}${driver(v('join'), [['비회원UV', v('uvn')], ['가입률', v('jr')]])}` : '',
     ], driver(v('fpr'), [['첫구매객수', v('fp')], ['첫구매 객단가', aov]]))}
-    ${line(`신규거래액 기대치 대비 ${pctB(v('nrev'))} = 신규고객수 ${pctB(v('nb'))} × 신규 객단가 ${pctB(naov)}`, [], driver(v('nrev'), [['신규고객수', v('nb')], ['신규 객단가', naov]]))}
-    ${line(`효율: 광고비 기대치 대비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제 ROAS ${pctB(v('roas'))}`, [], eff)}
-    ${line(`첫구매 비중(첫구매 ÷ 구매고객) ${dgFmt('ratio', sh.base)} → ${dgFmt('ratio', sh.recent)}, ${sh.vsEx != null ? `기대치 대비 ${pctB(sh.vsEx)}` : `베이스라인 대비 ${pctB(sh.chg)}`}`, [],
+    ${line(`신규거래액 계절요일보정 대비 ${pctB(v('nrev'))} = 신규고객수 ${pctB(v('nb'))} × 신규 객단가 ${pctB(naov)}`, [], driver(v('nrev'), [['신규고객수', v('nb')], ['신규 객단가', naov]]))}
+    ${line(`효율(계절요일보정 대비): 광고비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제 ROAS ${pctB(v('roas'))}`, [], eff)}
+    ${line(`첫구매 비중(첫구매 ÷ 구매고객) ${dgFmt('ratio', sh.base)} → ${dgFmt('ratio', sh.recent)}, ${sh.vsEx != null ? `${exName(sh)} 대비 ${pctB(sh.vsEx)}` : `베이스라인 대비 ${pctB(sh.chg)}`}`, [],
       shareBad ? ' → 악화로 판정 — 아래 구성 효과 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : ' → 비중 하락 없음')}
-    <div class="hint" style="margin-top:4px">% = 최근 일평균의 기대치 대비. 기대치(계절·요일보정) = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
+    <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
 }
 
 function renderDiag(main) {
@@ -1389,15 +1390,13 @@ function renderDiag(main) {
   const hasRef = rg.refBase.length > 0 && rg.refRecent.length > 0;
   const years = Object.entries(R.dates.reduce((a, d) => { const y = d.slice(0, 4); a[y] = (a[y] || 0) + 1; return a; }, {}));
 
-  let h = `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">최근 일평균 · 비율은 합계 ÷ 합계 · 기대치 = 계절·요일보정 · 베이스 = 베이스라인</span></div>
+  let h = `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">최근 일평균 · 비율은 합계 ÷ 합계 · 대비 % 옆 숫자 = 베이스라인 / 계절요일보정 값</span></div>
     <div class="tiles t8">${DG_METS.map(k => {
       const M = C.METRIC[k], r = rows[k], lb = M.lowerBetter;
       return `<div class="tile"><div class="t-l">${esc(M.n)}</div>
         <div class="t-v">${dgFmt(M.kind, r.recent)}${r.recent != null && M.kind !== 'ratio' ? `<small>${dgUnit(M.kind)}</small>` : ''}</div>
-        <div class="t-r"><span>${r.exKind === 'season' ? '기대치(계절) 대비' : '기대치 대비'}</span><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b></div>
-        <div class="t-r"><span>베이스 대비</span><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b></div>
-        <div class="t-r"><span>기대치</span><span>${dgFmt(M.kind, r.ex)}</span></div>
-        <div class="t-r"><span>베이스</span><span>${dgFmt(M.kind, r.base)}</span></div></div>`;
+        <div class="t-c">베이스라인 대비</div><div class="t-r"><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b><span>${dgFmt(M.kind, r.base)}</span></div>
+        <div class="t-c">${exName(r)} 대비</div><div class="t-r"><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b><span>${dgFmt(M.kind, r.ex)}</span></div></div>`;
     }).join('')}</div>
     ${diagCard(bl, F)}
       ${expDetail(bl, mets.find(k => C.METRIC[k].kind === 'count' || C.METRIC[k].kind === 'money') || 'fpr', F.refY)}</div></section>`;
@@ -1406,7 +1405,7 @@ function renderDiag(main) {
   F.dims = F.dims.filter(d => avail.includes(d));
   if (!F.dims.length) F.dims = ['t', 'md', 'camp'];
   const dimSel = L => `<select data-dgdim="${L}" aria-label="${L + 1}단계">${L > 0 ? '<option value="">(없음)</option>' : ''}${avail.map(k => `<option value="${k}"${F.dims[L] === k ? ' selected' : ''}>${DIM_NAME[k]}</option>`).join('')}</select>`;
-  h += `<section><div class="sec-h"><h2>드릴다운 · 베이스라인 vs 최근</h2><span class="desc">일평균 · 기대치 = 계절·요일보정(위와 같은 방식, 항목마다 계산)</span><div class="tools"><button class="lnk" id="dgFold" type="button">모두 접기</button><button class="btn" data-csv-for="dgTree" data-name="첫구매진단_드릴다운">CSV</button></div></div>
+  h += `<section><div class="sec-h"><h2>드릴다운 · 베이스라인 vs 최근</h2><span class="desc">일평균 · 계절요일보정은 위와 같은 방식으로 항목마다 계산</span><div class="tools"><button class="lnk" id="dgFold" type="button">모두 접기</button><button class="btn" data-csv-for="dgTree" data-name="첫구매진단_드릴다운">CSV</button></div></div>
     <div class="card pad" style="margin-bottom:12px"><span class="field">단계 ${[0, 1, 2, 3].map(dimSel).join(' › ')}</span> <span class="hint">디바이스를 넣으면 APP 결제 쪽 변화를 따로 볼 수 있다</span>
       <div class="tr-pick" style="margin:10px 0 0"><span class="hint">표 지표</span><div class="seg" role="group" aria-label="표 지표">${DG_METS.map(k => `<button type="button" data-dgmet="${k}" aria-pressed="${mets.includes(k)}">${esc(C.METRIC[k].n)}</button>`).join('')}</div></div></div>
     <div class="card tbl-wrap"><table class="grid" id="dgTree"></table></div></section>`;
@@ -1429,7 +1428,7 @@ function renderDiag(main) {
     <section><div class="card pad"><ul class="notes">
       <li>구매고객 = 총결제고객수 · 첫구매객수 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매 전환율 = 첫구매 ÷ UV(전체) · 첫구매 객단가 = 첫구매거래액 ÷ 첫구매객수 · 신규 객단가 = 신규거래액 ÷ 신규고객수</li>
       <li>구성 효과 분해 기준: 첫구매거래액 ÷ 총결제거래액 · 신규거래액 ÷ 순결제거래액 · 첫구매객수 ÷ 구매고객</li>
-      <li>"개선 없음" ≠ "유지": 기대치(계절·요일보정)를 못 넘으면 "기대치 대비 -x%", 비중이 내려가면 악화로 판정</li>
+      <li>"개선 없음" ≠ "유지": 계절요일보정을 못 넘으면 "계절요일보정 대비 -x%", 비중이 내려가면 악화로 판정</li>
       <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
       <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
 
@@ -1438,7 +1437,7 @@ function renderDiag(main) {
     <li>기간 ${esc(src.from)} ~ ${esc(src.to)} · ${src.days}일 · 연도별 ${years.map(([y, n]) => `${y}년 ${n}일`).join(', ')}</li>
     <li>베이스라인 ${ymd(DT.b0)}~${ymd(DT.b1)} ${compo(rg.base)} → 최근 ${ymd(DT.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}</li>
     <li>${hasRef ? `계절 비교 ${esc(F.refY)}년: ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} ${compo(rg.refBase)} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} ${compo(rg.refRecent)}`
-      : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 기대치(계절·요일보정)를 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
+      : `<b>${esc(F.refY)}년 같은 구간 데이터가 없어 계절요일보정을 계산하지 않습니다</b> — 비교 연도를 바꾸거나 해당 기간 원천을 추가하세요`}</li>
     <li>필터: ${esc(filt)} (상단 필터의 광고유형 · 비용출처를 따른다)</li>${naNote()}</ul></div></section>`;
   main.innerHTML = h;
 
@@ -1468,7 +1467,7 @@ function renderDgTree(rg, mets) {
   };
   walk('', 0);
   $id('dgTree').innerHTML = `<thead><tr><th></th>${mets.map(k => { const M = C.METRIC[k], u = dgUnit(M.kind); return `<th class="grp bl" colspan="5">${esc(M.n)}${u ? ` <span class="sub">${u}</span>` : ''}</th>`; }).join('')}</tr>
-    <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th>${mets.map(() => '<th class="bl">베이스</th><th>최근</th><th>기대치</th><th>베이스 대비</th><th>기대치 대비</th>').join('')}</tr></thead>
+    <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th>${mets.map(() => '<th class="bl">베이스라인</th><th>최근</th><th>계절요일보정</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>').join('')}</tr></thead>
     <tbody><tr class="tot"><td>합계</td>${cells(t.total)}</tr>${body}</tbody>`;
 }
 function seasonList() { return S.diag.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
@@ -1484,7 +1483,7 @@ function renderDgComp(rg, CM) {
     b: { buy: n.s[0][den] / (d[0] || 1), fp: n.s[0][num] / (d[0] || 1) }, r: { buy: n.s[1][den] / (d[1] || 1), fp: n.s[1][num] / (d[1] || 1) } }));
   if (F.exSeason) items = items.filter(x => !x.season);
   const dec = C.mixDecompose(items);
-  // 기대치(계절·요일보정): 기준 지표 · 비중 — 항목별, 합계는 남은 항목의 합으로
+  // 계절요일보정: 기준 지표 · 비중 — 항목별, 합계는 남은 항목의 합으로
   const tot = es.sets.map((_, k) => ({ [num]: items.reduce((a, x) => a + x.s[k][num], 0), [den]: items.reduce((a, x) => a + x.s[k][den], 0) }));
   const RM = { base: [num, den], f: s => C.div(s[num], s[den]) };
   const eN = s => C.expectRow(C.METRIC[num], s, d, es), eR = s => C.expectRow(RM, s, d, es);
@@ -1510,7 +1509,7 @@ function renderDgComp(rg, CM) {
   const rCells = e => `<td class="bl">${dgFmt('ratio', e.base)}</td><td>${dgFmt('ratio', e.recent)}</td><td>${dgFmt('ratio', e.ex)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td>`;
   const u = unitN ? ` <span class="sub">${unitN}</span>` : '';
   $id('dgBr').innerHTML = `<thead><tr><th></th><th class="grp" colspan="7">${esc(CM.n)}${u}</th><th class="grp bl" colspan="2">${esc(CM.dn)}${u}</th><th class="grp bl" colspan="4">${esc(CM.rn)}</th><th class="grp bl" colspan="2">비중 변화 분해</th></tr>
-    <tr><th>${esc(DIM_NAME[dim])}</th><th>베이스</th><th>최근</th><th>기대치</th><th>베이스 대비</th><th>기대치 대비</th><th>Δ</th><th>Δ 기여</th><th class="bl">베이스</th><th>최근</th><th class="bl">베이스</th><th>최근</th><th>기대치</th><th>기대치 대비</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
+    <tr><th>${esc(DIM_NAME[dim])}</th><th>베이스라인</th><th>최근</th><th>계절요일보정</th><th>베이스라인 대비</th><th>계절요일보정 대비</th><th>Δ</th><th>Δ 기여</th><th class="bl">베이스라인</th><th>최근</th><th class="bl">베이스라인</th><th>최근</th><th>계절요일보정</th><th>계절요일보정 대비</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
     <tr class="tot"><td>합계</td>${nCells(EN, dec.F1 - dec.F0)}<td>100%</td><td class="bl">${f(dec.O0)}</td><td>${f(dec.O1)}</td>${rCells(ER)}<td class="bl">${rel(dec.mix)}</td><td>${rel(dec.within)}</td></tr>
     ${rows.map(r => `<tr><td>${esc(r.name)}${r.season ? ' <span class="lv">시즌</span>' : ''}</td>${nCells(eN(r.s), r.dfp)}<td>${dec.F1 - dec.F0 ? C.fmt('ratio', r.dfp / (dec.F1 - dec.F0), { dp: 0 }) : '–'}</td>
       <td class="bl">${f(r.b.buy)}</td><td>${f(r.r.buy)}</td>${rCells(eR(r.s))}<td class="bl ${clsP(r.mix)}">${rel(r.mix)}</td><td class="${clsP(r.within)}">${rel(r.within)}</td></tr>`).join('')}</tbody>`;

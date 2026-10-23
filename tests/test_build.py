@@ -112,6 +112,13 @@ def test_alias_column_name(payload):
     assert f['uvn'].sum() > 0 and 'uvn' not in payload['row'].get('na', {})
 
 
+def test_canon_header_variants():
+    assert bd.canon(' 지표_UV（회원） ') == '지표_UV(회원)'
+    assert bd.canon('지표_UV (비회원)') == '지표_UV(비회원)'
+    assert bd.canon('지표_회원UV') == '지표_UV(회원)'
+    assert bd.canon('기간_일자') == '기간_일자' and bd.canon('기타컬럼') == '기타컬럼'
+
+
 def test_member_uv_gives_non_member_uv(sample, payload):
     # 추가분 원천은 비회원UV 없이 회원UV 만 있다 → 비회원UV = UV(전체) − 회원UV, '데이터 없음' 아님
     p2 = bd.build([sample / 'sample_row_1001.pkl'], base=json.loads(bd.to_json(payload)))
