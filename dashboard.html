@@ -231,6 +231,10 @@ table.tg tr.r-last td,table.tg tr.r-last th{border-bottom-color:var(--grid)!impo
 table.tg tr.r-prev th.stick{color:var(--ink-2);font-weight:400}
 
 /* 메모 (첫구매 실적 대시보드와 같은 모양) */
+.dgn-bar{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-bottom:4px}
+.dgn-tools{margin-left:auto;display:flex;gap:10px;align-items:center}
+.dgn-body{display:grid;gap:4px}
+.dgn-body.editing{outline:1px dashed var(--border);outline-offset:6px;border-radius:4px;min-height:60px}
 .more{margin-top:2px}
 .more>summary{display:inline;cursor:pointer;list-style:none;font-size:11px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:2px}
 .more>summary::-webkit-details-marker{display:none}
@@ -404,7 +408,7 @@ async function idbDel() { try { const db = await idb(); await new Promise(res =>
 
 async function downloadBackup() {
   if (!P) return;
-  const blob = new Blob([JSON.stringify({ ...P, memos: MEMOS.all() })]);
+  const blob = new Blob([JSON.stringify({ ...P, memos: MEMOS.all(), diagNotes: DGN.all() })]);
   const gz = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(gz); a.download = `광고신규대시보드_백업_${(P.lastDate || '').replace(/-/g, '')}.json.gz`; a.click();
@@ -424,7 +428,8 @@ async function readBackup(file) {
 // 새 백업을 이 브라우저에 저장된 데이터에 합친다 — 새 백업에 있는 날짜는 교체, 나머지 날짜(예: 2024년)는 그대로
 async function mergeAndStore(add) {
   const nMemo = MEMOS.mergeIn(add && add.memos);   // 백업에 담긴 메모를 이 브라우저 메모에 합친다
-  if (add) delete add.memos;
+  DGN.mergeIn(add && add.diagNotes);                // 첫구매 진단 편집본도
+  if (add) { delete add.memos; delete add.diagNotes; }
   const base = await idbGet();
   const merged = C.mergeBackup(base, add);
   const stored = await idbPut(merged);
@@ -951,13 +956,15 @@ const MEMO_INK = [['#d03b3b', '빨강'], ['#2a78d6', '파랑'], ['#006300', '초
 const MEMO_HL = [['#fff3a3', '노랑 형광'], ['#cfe8ff', '파랑 형광'], ['', '형광 없음']];
 const MEMO_TAGS = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, MARK: 1, SPAN: 1, DIV: 1, BR: 1, UL: 1, OL: 1, LI: 1, P: 1, FONT: 1 };
 const MEMO_PANES = [['a', '리뷰', '무슨 일이 있었나'], ['b', '계획', '무엇을 할까']];
-function memoClean(html) {   // 저장 · 표시 전에 허용한 태그와 색만 남긴다
+function memoClean(html, keepCls = null) {   // 저장 · 표시 전에 허용한 태그와 색(+ keepCls 의 클래스)만 남긴다
   const box = document.createElement('div');
   box.innerHTML = String(html || '');
   for (const el of [...box.querySelectorAll('*')].reverse()) {
     if (!MEMO_TAGS[el.tagName]) { el.replaceWith(...el.childNodes); continue; }
     const color = el.style ? el.style.color : '', bg = el.style ? el.style.backgroundColor : '', fc = el.getAttribute('color');
+    const cls = keepCls ? [...el.classList].filter(c => keepCls.has(c)) : [];
     for (const a of [...el.attributes]) el.removeAttribute(a.name);
+    if (cls.length) el.className = cls.join(' ');
     if (color) el.style.color = color;
     if (bg) el.style.backgroundColor = bg;
     if (fc && el.tagName === 'FONT') el.setAttribute('color', fc);
@@ -1356,26 +1363,91 @@ function driver(tot, parts) {
   const opp = parts.filter(x => x !== main && x[1] * Math.sign(tot) < -0.5);
   return ` → 주로 ${main[0]} 때문${opp.length ? ` (반대 방향: ${opp.map(([n, p]) => `${n} ${sgn(p)}`).join(' · ')})` : ''}`;
 }
-function diagCard(bl, F) {
+// 매체별 · 매체 상세(캠페인)별 첫구매거래액 · 신규거래액 변화 — 항목마다 최근 − 계절요일보정(일평균)
+function mediaMoves(rg) {
+  const es = C.expSets(R, rg), dims = ['t', 'md', ...(R.dims.camp ? ['camp'] : [])];
+  const t = C.tree(R, { where: dgWhere(), dims, sets: es.sets, mets: ['fpr', 'nrev'] });
+  const name = n => { const p = n.key.split('|').map((ix, L) => R.dims[dims[L]][+ix]); return `${p[1]}(${p[0]})${p[2] != null ? ' › ' + p[2] : ''}`; };
+  const out = {};
+  for (const k of ['fpr', 'nrev']) {
+    const pick = level => {
+      const list = [...t.nodes.values()].filter(n => n.level === level).map(n => {
+        const e = C.expectRow(C.METRIC[k], n.s, t.days, es), ref = e.ex != null ? e.ex : e.base;
+        return { name: name(n), gap: e.recent != null && ref != null ? e.recent - ref : null, p: e.ex != null ? e.vsEx : e.chg };
+      }).filter(x => x.gap != null && Math.abs(x.gap) >= 1);
+      return { down: list.filter(x => x.gap < 0).sort((a, b) => a.gap - b.gap).slice(0, 3), up: list.filter(x => x.gap > 0).sort((a, b) => b.gap - a.gap).slice(0, 3) };
+    };
+    out[k] = { md: pick(1), camp: dims.length > 2 ? pick(2) : null };
+  }
+  return out;
+}
+const moveTxt = list => list.length ? list.map(x => `${esc(x.name)} <b class="${clsP(x.gap)}">${x.gap > 0 ? '+' : ''}${C.fmt('money', x.gap)}</b>(${sgn(x.p)})`).join(' · ') : '없음';
+const moveLines = (m, label) => !m ? '' : `${label}: 감소 ${moveTxt(m.down)} / 증가 ${moveTxt(m.up)}`;
+function diagCard(bl, F, mv) {
   const r = bl.rows, ex = M => C.expectRow(M, bl.sums, bl.days, bl).vsEx;
   const aov = ex({ base: ['fpr', 'fp'], f: s => C.div(s.fpr, s.fp) }), naov = ex({ base: ['nrev', 'nb'], f: s => C.div(s.nrev, s.nb) });
   const v = k => r[k].vsEx;
   const line = (h, l2s, tail) => `<div class="h">□ ${h}${tail || ''}</div>${l2s.filter(Boolean).map(x => `<div class="l2">ㄴ ${x}</div>`).join('')}`;
-  // 첫구매 비중 판정은 계절요일보정 대비, 계산할 수 없으면 베이스라인 대비 (분석 원칙 1)
-  const sh = r.fps, shareRef = sh.vsEx ?? sh.chg, shareBad = shareRef != null && shareRef < -0.5;
   const cost = v('cost'), fcpa = v('fcpa');
   const eff = cost == null || fcpa == null ? '' : fcpa > 0.5 ? ' → 첫구매CPA가 계절요일보정보다 비쌈(효율 악화)' : fcpa < -0.5 ? ' → 첫구매CPA가 계절요일보정보다 쌈(효율 개선)' : ' → 첫구매CPA 계절요일보정 수준';
-  return `<div class="card pad judge" style="margin-top:12px">
-    ${line(`첫구매거래액 계절요일보정 대비 ${pctB(v('fpr'))} = 첫구매객수 ${pctB(v('fp'))} × 첫구매 객단가 ${pctB(aov)}`, [
+  return `${line(`첫구매거래액 계절요일보정 대비 ${pctB(v('fpr'))} = 첫구매객수 ${pctB(v('fp'))} × 첫구매 객단가 ${pctB(aov)}`, [
       `첫구매객수 ${pctB(v('fp'))} = 유입(UV) ${pctB(v('uv'))} × 전환율(첫구매 ÷ UV) ${pctB(v('fpu'))}${driver(v('fp'), [['유입(UV)', v('uv')], ['전환율', v('fpu')]])}`,
       v('join') != null && v('fpj') != null ? `첫구매객수 ${pctB(v('fp'))} = 가입 ${pctB(v('join'))} × 첫구매율(첫구매 ÷ 가입) ${pctB(v('fpj'))}${driver(v('fp'), [['가입', v('join')], ['첫구매율', v('fpj')]])}` : '',
       v('uvn') != null && v('jr') != null ? `가입 ${pctB(v('join'))} = 비회원UV ${pctB(v('uvn'))} × 가입률 ${pctB(v('jr'))}${driver(v('join'), [['비회원UV', v('uvn')], ['가입률', v('jr')]])}` : '',
+      moveLines(mv.fpr.md, '매체별'), moveLines(mv.fpr.camp, '매체 상세(캠페인)'),
     ], driver(v('fpr'), [['첫구매객수', v('fp')], ['첫구매 객단가', aov]]))}
-    ${line(`신규거래액 계절요일보정 대비 ${pctB(v('nrev'))} = 신규고객수 ${pctB(v('nb'))} × 신규 객단가 ${pctB(naov)}`, [], driver(v('nrev'), [['신규고객수', v('nb')], ['신규 객단가', naov]]))}
-    ${line(`효율(계절요일보정 대비): 광고비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제 ROAS ${pctB(v('roas'))}`, [], eff)}
-    ${line(`첫구매 비중(첫구매 ÷ 구매고객) ${dgFmt('ratio', sh.base)} → ${dgFmt('ratio', sh.recent)}, ${sh.vsEx != null ? `${exName(sh)} 대비 ${pctB(sh.vsEx)}` : `베이스라인 대비 ${pctB(sh.chg)}`}`, [],
-      shareBad ? ' → 악화로 판정 — 아래 구성 효과 분해 후 남는 내부 효과만 트래킹 이슈로 해석' : ' → 비중 하락 없음')}
-    <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
+    ${line(`신규거래액 계절요일보정 대비 ${pctB(v('nrev'))} = 신규고객수 ${pctB(v('nb'))} × 신규 객단가 ${pctB(naov)}`, [
+      moveLines(mv.nrev.md, '매체별'), moveLines(mv.nrev.camp, '매체 상세(캠페인)'),
+    ], driver(v('nrev'), [['신규고객수', v('nb')], ['신규 객단가', naov]]))}
+    ${line(`효율(계절요일보정 대비): 광고비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제 ROAS ${pctB(v('roas'))}`, [], eff)}`;
+}
+
+// 진단 직접 편집 — 구간 · 비교 연도 · 필터마다 하나, 이 브라우저에 저장하고 백업 내려받기에 함께 담는다
+const DGN_KEY = 'ad-new-dashboard-diagnotes';
+const DGN_CLS = new Set(['h', 'l2', 'l3', 'pos', 'neg', 'hint']);
+let DGN_MEM = null, DGN_EDIT = false, DGN_AUTO = false;   // 편집 중 · 편집본 대신 자동 진단 보기
+const dgnRead = () => {
+  if (DGN_MEM) return DGN_MEM;
+  try { const x = JSON.parse(localStorage.getItem(DGN_KEY) || '{}'); DGN_MEM = x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch (e) { DGN_MEM = {}; }
+  return DGN_MEM;
+};
+const dgnWrite = o => { DGN_MEM = o; try { localStorage.setItem(DGN_KEY, JSON.stringify(o)); } catch (e) { /* 저장소 사용 불가 */ } };
+const DGN = {
+  all: () => ({ ...dgnRead() }),
+  get: k => dgnRead()[k] || null,
+  set: (k, v) => dgnWrite({ ...dgnRead(), [k]: v }),
+  remove: k => { const o = { ...dgnRead() }; delete o[k]; dgnWrite(o); },
+  mergeIn: o => {   // 같은 구간은 최근 수정본
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return 0;
+    const cur = { ...dgnRead() }; let n = 0;
+    for (const [k, v] of Object.entries(o)) {
+      if (!v || typeof v.html !== 'string' || k.length > 300) continue;
+      if (!cur[k] || String(v.updated || '') > String(cur[k].updated || '')) { cur[k] = { ...v, html: memoClean(v.html, DGN_CLS) }; n++; }
+    }
+    if (n) dgnWrite(cur);
+    return n;
+  },
+};
+function dgnKey(DT) { return [DT.b0, DT.b1, DT.r0, S.diag.refY, JSON.stringify(S.types || null), JSON.stringify(S.srcs || null)].join('|'); }
+function diagNote(bl, F, mv, DT, rg) {
+  const key = dgnKey(DT), saved = DGN.get(key), auto = diagCard(bl, F, mv);
+  const showSaved = saved && !DGN_AUTO && !DGN_EDIT;
+  const body = DGN_EDIT ? memoClean(saved && !DGN_AUTO ? saved.html : auto, DGN_CLS) : showSaved ? memoClean(saved.html, DGN_CLS) : auto;
+  const when = saved ? `${saved.updated ? saved.updated.slice(0, 10).replace(/-/g, '.') : ''} 편집${saved.r1 && saved.r1 !== rg.r1 ? ` · ${ymd(saved.r1)}까지 데이터 기준 — 지금 숫자와 다를 수 있음` : ''}` : '';
+  const tools = DGN_EDIT
+    ? '<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>'
+    : `<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 진단 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
+  return `<div class="card pad judge dgn" style="margin-top:12px">
+    <div class="dgn-bar"><b>진단</b><span class="hint">${DGN_EDIT ? '편집 중 — 글자를 고치고 저장 (Ctrl+B 굵게)' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 진단 (편집본 있음 · ${esc(when)})` : '자동 진단 — 편집을 누르면 직접 고칠 수 있다'}</span><span class="dgn-tools">${tools}</span></div>
+    <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="진단 편집"' : ''}>${body}</div>
+    <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원 · 작으면 만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
+}
+function dgnSave() {
+  const el = $id('dgnBody'); if (!el) return;
+  const DT = dgDates(), html = memoClean(el.innerHTML, DGN_CLS);
+  if (memoPlain(el)) DGN.set(dgnKey(DT), { html, r1: dgRanges().r1, updated: new Date().toISOString() });
+  else DGN.remove(dgnKey(DT));
+  DGN_EDIT = false; DGN_AUTO = false; render(true);
 }
 
 function renderDiag(main) {
@@ -1398,7 +1470,7 @@ function renderDiag(main) {
         <div class="t-c">베이스라인 대비</div><div class="t-r"><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b><span>${dgFmt(M.kind, r.base)}</span></div>
         <div class="t-c">${exName(r)} 대비</div><div class="t-r"><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b><span>${dgFmt(M.kind, r.ex)}</span></div></div>`;
     }).join('')}</div>
-    ${diagCard(bl, F)}
+    ${diagNote(bl, F, mediaMoves(rg), DT, rg)}
       ${expDetail(bl, mets.find(k => C.METRIC[k].kind === 'count' || C.METRIC[k].kind === 'money') || 'fpr', F.refY)}</div></section>`;
 
   const avail = DIAG_DIMS.filter(k => R.dims[k]);
@@ -1610,6 +1682,11 @@ document.addEventListener('click', e => {
   if (ds.tw != null) { const o = new Set(S.drill.open); o.has(ds.tw) ? o.delete(ds.tw) : o.add(ds.tw); S.drill.open = [...o]; render(true); return; }
   if (ds.sel != null) { S.drill.sel = ds.sel; render(true); const s = $id('drSelSec'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
+  if (t.id === 'dgnEdit') { DGN_EDIT = true; render(true); const el = $id('dgnBody'); if (el) el.focus(); return; }
+  if (t.id === 'dgnCancel') { DGN_EDIT = false; render(true); return; }
+  if (t.id === 'dgnSave') { dgnSave(); return; }
+  if (t.id === 'dgnToggle') { DGN_AUTO = !DGN_AUTO; render(true); return; }
+  if (t.id === 'dgnReset') { if (confirm('이 구간의 진단 편집본을 지우고 자동 진단으로 되돌릴까요?')) { DGN.remove(dgnKey(dgDates())); DGN_AUTO = false; render(true); } return; }
   if (ds.dgmet != null) { const m = new Set(dgMets()); m.has(ds.dgmet) ? m.delete(ds.dgmet) : m.add(ds.dgmet); if (m.size) { S.diag.mets = DG_METS.filter(k => m.has(k)); render(true); } return; }
   if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
   if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }
