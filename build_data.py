@@ -54,6 +54,7 @@ LITE_DROP = ['sub', 'bp', 'dev']   # --lite 에서 빼는 차원
 ROW_METRICS = {
     '지표_광고비': 'cost',
     '지표_UV(전체)': 'uv',
+    '지표_UV(비회원)': 'uvn',               # 비회원UV (가입률의 분모)
     '지표_가입회원': 'join',
     '지표_총결제고객수(첫구매)': 'fp',      # 첫구매 (최종 정의: 총결제)
     '지표_총결제거래액(첫구매)': 'fpr',     # 첫구매거래액
@@ -64,6 +65,12 @@ ROW_METRICS = {
     '지표_총결제거래액': 'rev',             # 거래액
     '지표_순결제거래액': 'nrv',             # 순결제거래액 (거래액 ROAS 의 분자)
     '지표_총결제고객수(윈백)': 'wb',        # 윈백 구매고객
+}
+# 원천마다 이름이 다를 수 있는 컬럼 → 위 이름으로 맞춘다
+ROW_ALIASES = {
+    '지표_비회원UV': '지표_UV(비회원)',
+    '지표_UV_비회원': '지표_UV(비회원)',
+    '지표_비회원 UV': '지표_UV(비회원)',
 }
 ROW_DATE = '기간_일자'
 TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA']
@@ -156,9 +163,14 @@ def read_csv_any(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, encoding=enc, sep=sep, dtype=str, keep_default_na=False, na_values=[''], encoding_errors=errors)
 
 
+def canon(c) -> str:
+    c = str(c).strip() if c is not None else ''
+    return ROW_ALIASES.get(c, c)
+
+
 def _norm(df: pd.DataFrame, name: str) -> pd.DataFrame:
     """원천 한 덩어리 → WANT 컬럼(없으면 빈값)"""
-    df.columns = [str(c).strip() for c in df.columns]
+    df.columns = [canon(c) for c in df.columns]
     if ROW_DATE not in df.columns and '구분_기간' in df.columns:    # 기간_일자가 없으면 구분_기간(YYYYMMDD)
         df[ROW_DATE] = df['구분_기간']
     if ROW_DATE not in df.columns:
@@ -181,7 +193,7 @@ def iter_xlsb(path: Path):
             for n, r in enumerate(sh.rows()):
                 vals = [c.v for c in r]
                 if idx is None:
-                    header = [str(v).strip() if v is not None else '' for v in vals]
+                    header = [canon(v) for v in vals]
                     if ROW_DATE not in header and '구분_기간' in header:
                         header[header.index('구분_기간')] = ROW_DATE
                     if ROW_DATE not in header:
@@ -210,7 +222,7 @@ def iter_raw(path: Path):
         yield _norm(xl.parse(ROW_SHEET if ROW_SHEET in xl.sheet_names else xl.sheet_names[0], dtype=str), path.name)
     else:
         enc, sep, header, errors = sniff_csv(path)
-        use = [c for c in header if c in WANT or c == '구분_기간']   # 필요한 컬럼만 읽는다
+        use = [c for c in header if canon(c) in WANT or c == '구분_기간']   # 필요한 컬럼만 읽는다
         if ROW_DATE not in use and '구분_기간' not in use:
             raise ValueError(f'[로우] {path.name}: 첫 행에 "{ROW_DATE}" 컬럼이 없습니다 (로우 시트 형식인지 확인)')
         reader = pd.read_csv(path, encoding=enc, sep=sep, usecols=use, dtype=str, keep_default_na=False, na_values=[''],
@@ -304,7 +316,7 @@ def load_prepped(path: Path, use_cache: bool = True) -> tuple[pd.DataFrame, list
     # 캐시는 같은 파일(크기 · 수정시각)이고 읽는 지표 목록이 같을 때만 쓴다
     #  — 같은 이름으로 파일을 바꿔 넣거나(복사하면 수정시각이 예전 그대로일 수 있음) 지표가 늘면 다시 읽는다
     st = path.stat()
-    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items())]
+    sig = [st.st_size, st.st_mtime_ns, list(ROW_METRICS.items()), list(ROW_DIMS.items()), list(ROW_ALIASES.items())]
     if cacheable and cache.exists():
         try:
             c = pd.read_pickle(cache)

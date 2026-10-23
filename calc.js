@@ -7,26 +7,28 @@
 
   const TYPES = ['브랜드검색광고', '사이트검색광고', '쇼핑검색광고', 'DA', 'DA(페이먼츠)', '메시지', 'PA'];
   const TOTAL = '합계';
-  const ROW_METS = ['cost', 'uv', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb', 'nrv'];
+  const ROW_METS = ['cost', 'uv', 'uvn', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb', 'nrv'];
 
-  // 화면 지표 — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
+  // 화면 지표(추이 순서) — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
   const METRICS = [
     { k: 'cost', n: '광고비', kind: 'money', base: ['cost'], f: s => s.cost },
+    { k: 'uv', n: 'UV', kind: 'count', base: ['uv'], f: s => s.uv },
+    { k: 'uvn', n: '비회원UV', kind: 'count', base: ['uvn'], f: s => s.uvn },
     { k: 'join', n: '가입', kind: 'count', base: ['join'], f: s => s.join },
     { k: 'jcpa', n: '가입CPA', kind: 'cpa', base: ['cost', 'join'], f: s => div(s.cost, s.join), lowerBetter: true },
-    { k: 'fp', n: '첫구매', kind: 'count', base: ['fp'], f: s => s.fp },
+    { k: 'jr', n: '가입률', kind: 'ratio', base: ['join', 'uvn'], f: s => div(s.join, s.uvn) },         // 가입 ÷ 비회원UV
+    { k: 'fp', n: '첫구매객수', kind: 'count', base: ['fp'], f: s => s.fp },
     { k: 'fcpa', n: '첫구매CPA', kind: 'cpa', base: ['cost', 'fp'], f: s => div(s.cost, s.fp), lowerBetter: true },
     { k: 'fpr', n: '첫구매거래액', kind: 'money', base: ['fpr'], f: s => s.fpr },
+    { k: 'fpj', n: '첫구매율', kind: 'ratio', base: ['fp', 'join'], f: s => div(s.fp, s.join) },         // 첫구매객수 ÷ 가입
     { k: 'nb', n: '신규고객수', kind: 'count', base: ['nb'], f: s => s.nb },
     { k: 'nrev', n: '신규거래액', kind: 'money', base: ['nrev'], f: s => s.nrev },
     { k: 'nrv', n: '순결제거래액', kind: 'money', base: ['nrv'], f: s => s.nrv },
     { k: 'roas', n: '순결제 ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },   // 순결제거래액 ÷ 광고비
   ];
-  // 드릴다운 표에만 쓰는 보조 지표
+  // 드릴다운 · 첫구매 진단에만 쓰는 보조 지표
   const EXTRA = [
-    { k: 'fpj', n: '첫구매/가입', kind: 'ratio', base: ['fp', 'join'], f: s => div(s.fp, s.join) },
     { k: 'fpn', n: '첫구매(순결제)', kind: 'count', base: ['fpn'], f: s => s.fpn },
-    { k: 'uv', n: 'UV', kind: 'count', base: ['uv'], f: s => s.uv },
     { k: 'buy', n: '구매고객', kind: 'count', base: ['buy'], f: s => s.buy },
     { k: 'fps', n: '첫구매 비중', kind: 'ratio', base: ['fp', 'buy'], f: s => div(s.fp, s.buy) },   // 첫구매 ÷ 구매고객(총결제)
     { k: 'fpu', n: '첫구매 전환율', kind: 'ratio', base: ['fp', 'uv'], f: s => div(s.fp, s.uv) },    // 첫구매 ÷ UV
@@ -280,25 +282,43 @@
     }
     return o;
   }
-  function baseline(ds, series, { base, recent, refBase, refRecent }) {
-    const mets = ['buy', 'fp', 'uv'];
-    const B = avgOf(series, base, mets), R = avgOf(series, recent, mets);
-    const RB = avgOf(series, refBase, mets), RR = avgOf(series, refRecent, mets);
-    const W = weekdayAdjusted(ds, series, base, recent, mets);
-    const RW = weekdayAdjusted(ds, series, refBase, refRecent, mets);
-    const out = { base: B, recent: R, refBase: RB, refRecent: RR, adj: W, refAdj: RW, rows: {} };
-    // buy 구매고객 · fp 첫구매 · share 첫구매 비중(fp/buy) · uv · cr 첫구매 전환율(fp/uv)
-    for (const k of ['buy', 'fp', 'share', 'uv', 'cr']) {
-      const get = o => k === 'share' ? div(o.fp, o.buy) : k === 'cr' ? div(o.fp, o.uv) : o[k];
-      const b = get(B), r = get(R), rb = get(RB), rr = get(RR), w = get(W), rw = get(RW);
-      const season = (rb && rr != null) ? rr / rb : null;            // 비교 연도 같은 구간 증감 배수
-      const exp = (b != null && season != null) ? b * season : null;  // 단순 기대치
-      const seasonAdj = (rw && rr != null) ? rr / rw : null;           // 비교 연도도 요일 보정
-      const expAdj = (w != null && seasonAdj != null) ? w * seasonAdj : null;
-      out.rows[k] = { base: b, recent: r, chg: pct(r, b), refBase: rb, refRecent: rr, season: season == null ? null : (season - 1) * 100,
-        exp, vsExp: pct(r, exp), adjBase: w, expAdj, vsExpAdj: pct(r, expAdj) };
-    }
-    return out;
+  // 기대치 계산에 쓰는 날짜 집합 8개: 베이스라인 · 최근 · 비교 연도 베이스라인 · 비교 연도 최근
+  //  + 베이스라인 평일 / 주말·휴일 · 비교 연도 베이스라인 평일 / 주말·휴일. mix = 최근 구간의 [평일, 주말·휴일] 일수
+  function expSets(ds, { base, recent, refBase, refRecent }) {
+    const b = weekdaySplit(ds, base), rb = weekdaySplit(ds, refBase), r = weekdaySplit(ds, recent), rr = weekdaySplit(ds, refRecent);
+    return { sets: [base, recent, refBase, refRecent, b.on, b.off, rb.on, rb.off], mix: [r.on.length, r.off.length], refMix: [rr.on.length, rr.off.length] };
+  }
+  // 지표 하나의 베이스라인 · 최근 · 기대치. sums[k] · days[k] = expSets 의 집합 k 합계 · 일수 (C.tree 결과를 그대로 넣어도 된다)
+  //  기대치(계절) exp = B × (RR ÷ RB) · 기대치(계절·요일보정) expAdj = W × (RR ÷ RW)
+  //  W · RW = 베이스라인을 평일 / 주말·휴일 평균으로 나눠 (각 해) 최근 구간의 요일 구성으로 다시 가중한 값
+  //  비율 · CPA 는 분자 · 분모 각각의 일평균으로 계산한다(= 분자 기대치 ÷ 분모 기대치)
+  function expectRow(metric, sums, days, es) {
+    const mets = metric.base;
+    const avg = k => { const o = {}; for (const m of mets) o[m] = days[k] ? sums[k][m] / days[k] : null; return o; };
+    const adj = (on, off, [nOn, nOff]) => {
+      const a = avg(on), b = avg(off), n = nOn + nOff, o = {};
+      for (const m of mets) o[m] = (!n || a[m] == null || b[m] == null) ? null : (a[m] * nOn + b[m] * nOff) / n;
+      return o;
+    };
+    const get = o => { for (const m of mets) if (o[m] == null || Number.isNaN(o[m])) return null; const v = metric.f(o); return v == null || !isFinite(v) ? null : v; };
+    const b = get(avg(0)), r = get(avg(1)), rb = get(avg(2)), rr = get(avg(3)), w = get(adj(4, 5, es.mix)), rw = get(adj(6, 7, es.refMix));
+    const season = (rb && rr != null) ? rr / rb : null;            // 비교 연도 같은 구간 증감 배수
+    const exp = (b != null && season != null) ? b * season : null;  // 기대치(계절)
+    const seasonAdj = (rw && rr != null) ? rr / rw : null;           // 비교 연도도 요일 보정
+    const expAdj = (w != null && seasonAdj != null) ? w * seasonAdj : null;
+    // 화면에 쓰는 기대치: 계절·요일보정, 요일 보정을 못 하면(한 구간에 평일이나 주말·휴일이 없음) 계절만
+    const ex = expAdj != null ? expAdj : exp;
+    return { base: b, recent: r, chg: pct(r, b), refBase: rb, refRecent: rr, season: season == null ? null : (season - 1) * 100,
+      exp, vsExp: pct(r, exp), adjBase: w, refAdj: rw, seasonAdj, expAdj, vsExpAdj: pct(r, expAdj),
+      ex, vsEx: pct(r, ex), exKind: expAdj != null ? 'adj' : exp != null ? 'season' : null };
+  }
+  function baseline(ds, series, ranges, keys = ['buy', 'fp', 'fps', 'uv', 'fpu']) {
+    const es = expSets(ds, ranges);
+    const mets = [...new Set(keys.flatMap(k => METRIC[k].base))];
+    const sums = es.sets.map(idx => sumIdx(series, idx, mets)), days = es.sets.map(idx => idx.length);
+    const rows = {};
+    for (const k of keys) rows[k] = expectRow(METRIC[k], sums, days, es);
+    return { rows, sums, days, mix: es.mix, refMix: es.refMix };
   }
   // 날짜를 다른 연도의 같은 월·일로 (2/29 → 2/28)
   function sameDateIn(isoDate, year) {
@@ -423,7 +443,7 @@
     TYPES, TOTAL, ROW_METS, METRICS, EXTRA, METRIC, HOLIDAYS, EVENTS, WD,
     div, pct, dnum, iso, dow, isOff, monthDays, weekInfo,
     prepare, daily, addSeries, naIn, periods, compareIdx, rangeIdx, sumIdx, value, seriesValues,
-    tree, children, keyWhere, avgOf, weekdaySplit, weekdayAdjusted, baseline, sameDateIn, mixDecompose,
+    tree, children, keyWhere, avgOf, weekdaySplit, weekdayAdjusted, expSets, expectRow, baseline, sameDateIn, mixDecompose,
     fmt, fmtNum, scaled, unit, mergeBackup,
   };
   root.AdCalc = api;

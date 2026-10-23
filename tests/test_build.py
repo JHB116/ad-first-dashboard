@@ -49,7 +49,7 @@ def test_row_totals_match_raw(sample, payload):
     raw['t'] = bd.classify(raw)
     raw = raw[raw['t'].notna()]
     got = frame(payload['row'])
-    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv', 'nrv']:
+    for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv', 'uvn', 'nrv']:
         assert np.allclose(raw.groupby('t')[m].sum().sort_index(), got.groupby('t')[m].sum().sort_index(), atol=0.5), m
     # 차원별 합도 보존 (브랜드/기획전 · 디바이스)
     for k in ['bp', 'dev', 'camp']:
@@ -106,10 +106,16 @@ def test_old_backup_without_new_metrics(sample, payload):
     assert f[f['date'] >= '2026-09-29']['buy'].sum() > 0
 
 
+def test_alias_column_name(payload):
+    # 원천의 '지표_비회원UV' 는 ROW_ALIASES 로 '지표_UV(비회원)'(uvn) 이 된다
+    f = frame(payload['row'])
+    assert f['uvn'].sum() > 0 and 'uvn' not in payload['row'].get('na', {})
+
+
 def test_2024_file_missing_columns_marked_na(sample):
     p = bd.build([sample / 'sample_row_2024.pkl', sample / 'sample_row.pkl'])
     na = p['row']['na']
-    assert set(na) == {'fpn', 'nb', 'nrev', 'wb'}
+    assert set(na) == {'fpn', 'nb', 'nrev', 'wb', 'uvn'}
     for m in na:
         assert na[m][0] == '2024-01-01' and na[m][-1] == '2024-12-31' and len(na[m]) == 366
     assert p['source']['row']['na']['nb'] == {'from': '2024-01-01', 'to': '2024-12-31', 'days': 366}

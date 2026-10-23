@@ -73,8 +73,8 @@ test('베이스라인 · 계절 기대치 · 비중 · 전환율', () => {
   near(r.buy.base, 1200); near(r.fp.base, 100); near(r.buy.recent, 1500); near(r.fp.recent, 114);
   near(r.buy.chg, 25); near(r.fp.chg, 14); near(r.buy.season, 10); near(r.fp.season, 20);
   near(r.buy.exp, 1320); near(r.fp.exp, 120); near(r.fp.vsExp, -5);
-  near(r.share.base, 100 / 1200, 1e-9); near(r.share.recent, 114 / 1500, 1e-9);
-  near(r.cr.base, 100 / 40000, 1e-12); near(r.cr.recent, 114 / 38000, 1e-12); near(r.uv.chg, -5);
+  near(r.fps.base, 100 / 1200, 1e-9); near(r.fps.recent, 114 / 1500, 1e-9);
+  near(r.fpu.base, 100 / 40000, 1e-12); near(r.fpu.recent, 114 / 38000, 1e-12); near(r.uv.chg, -5);
   near(r.fp.expAdj, 120);   // 하루 고정값이면 요일 보정 기대치 = 단순 기대치
 });
 
@@ -85,6 +85,26 @@ test('요일 보정: 평일·주말 평균을 비교구간 요일 구성으로 �
   const w = C.weekdayAdjusted(R, s, base, recent, ['buy']);
   // 10/1(목) 10/2(금) 평일, 10/3(토·개천절) 10/4(일) → (10*2 + 20*2)/4
   assert.equal(w.on, 2); assert.equal(w.off, 2); near(w.buy, 15, 1e-9);
+});
+
+test('기대치: 드릴다운(트리 합계)과 상단(일자 시리즈) 값이 같고, 비율은 분자 기대치 ÷ 분모 기대치', () => {
+  const rg = {
+    base: C.rangeIdx(R, '2026-07-01', '2026-09-30'), recent: C.rangeIdx(R, '2026-10-01', '2026-10-04'),
+    refBase: C.rangeIdx(R, '2025-07-01', '2025-09-30'), refRecent: C.rangeIdx(R, '2025-10-01', '2025-10-04'),
+  };
+  const series = C.daily(R).get('_');
+  const keys = ['fpr', 'nrev', 'jr', 'fpj', 'fcpa', 'fp', 'join', 'uvn'];
+  const top = C.baseline(R, series, rg, keys).rows;
+  const es = C.expSets(R, rg), mets = [...new Set(keys.flatMap(k => C.METRIC[k].base))];
+  const t = C.tree(R, { dims: ['t'], sets: es.sets, mets });
+  for (const k of keys) {
+    const r = C.expectRow(C.METRIC[k], t.total, t.days, es);
+    assert.equal(r.exKind, 'adj', k);
+    near(r.ex, top[k].ex, 1e-6); near(r.base, top[k].base, 1e-6); near(r.recent, top[k].recent, 1e-6);
+  }
+  near(top.fpj.ex, top.fp.ex / top.join.ex, 1e-9);     // 첫구매율 = 첫구매객수 ÷ 가입
+  near(top.jr.ex, top.join.ex / top.uvn.ex, 1e-9);     // 가입률 = 가입 ÷ 비회원UV
+  near(top.jr.recent, C.div(C.sumIdx(series, rg.recent, ['join']).join, C.sumIdx(series, rg.recent, ['uvn']).uvn), 1e-12);
 });
 
 test('구성 효과 분해: 구성 + 내부 = 비중 변화 (브랜드/기획전 기준)', () => {

@@ -35,7 +35,8 @@ ROW_SPEC = [
 ]
 METS = ['지표_광고비', '지표_UV(전체)', '지표_가입회원', '지표_총결제고객수(첫구매)', '지표_총결제거래액(첫구매)',
         '지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액',
-        '지표_총결제고객수', '지표_총결제거래액', '지표_총결제고객수(윈백)', '지표_순결제거래액']
+        '지표_총결제고객수', '지표_총결제거래액', '지표_총결제고객수(윈백)', '지표_순결제거래액',
+        '지표_비회원UV']   # 비회원UV 는 다른 이름(별칭)으로 — build_data.ROW_ALIASES 검증
 COLS = ['Source.Name', '기간_월', '기간_일자', '구분_AF코드', '구분_광고유형', '구분_채널', '구분_매체명', '구분_비용출처',
         '구분_캠페인', '구분_하위캠페인', '구분_브랜드/기획전', '구분_디바이스', *METS]
 
@@ -51,10 +52,11 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
                 scale = scale_all * w * dw * (1.3 if d.dayofweek >= 5 else 1.0) * rng.uniform(.7, 1.3)
                 fp = int(rng.poisson(10 * scale))
                 other = int(rng.poisson(80 * scale))
+                uv = int(rng.poisson(2000 * scale))
                 rows.append([source, f'{d.year}년{d.month:02d}월', serial, 'AF0', t, ch, md, src, camp, sub, bp, dev,
-                             round(2_000_000 * scale), int(rng.poisson(2000 * scale)), int(rng.poisson(30 * scale)), fp,
+                             round(2_000_000 * scale), uv, int(rng.poisson(30 * scale)), fp,
                              fp * int(rng.integers(40_000, 90_000)), int(fp * .8), int(fp * .7), int(fp * .7) * 60_000,
-                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale)), (fp + other) * 63_000])
+                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale)), (fp + other) * 63_000, int(uv * .6)])
         # 미분류 행 · 문자열 섞인 숫자 · 음수 조정분
         r = [source, '', serial, '-', 'APP', '-', '-', '-', '-', '-', '-', '-', *zeros]
         r[14] = ' - '
@@ -67,7 +69,7 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
 
 
 # 2024년 원천에는 없는 지표 컬럼 (컬럼 이름이 다르거나 없음)
-COLS_2024_MISSING = ['지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액', '지표_총결제고객수(윈백)']
+COLS_2024_MISSING = ['지표_순결제고객수(첫구매)', '지표_당년신규순결제고객수', '지표_당년신규순결제거래액', '지표_총결제고객수(윈백)', '지표_비회원UV']
 
 
 def main(out: Path):
