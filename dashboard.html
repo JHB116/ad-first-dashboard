@@ -93,15 +93,17 @@ select{cursor:pointer;max-width:260px}
 /* 요약 타일 */
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 @media (min-width:1000px){.tiles{grid-template-columns:repeat(var(--tc,5),minmax(0,1fr))}}
-@media (min-width:1200px){.tiles.t7{--tc:7}.tiles.t8{--tc:8}}   /* 추이 요약 14개 = 7 × 2 줄 · 첫구매 진단 16개 = 8 × 2 줄 */
+@media (min-width:1200px){.tiles.t8{--tc:8}}   /* 추이 · 첫구매 진단 카드 15개 = 8 + 7 */
+@media (min-width:1000px) and (max-width:1439px){.tiles.t8w{--tc:5}}   /* 첫구매 진단 카드는 줄 이름이 길어 넓은 화면에서만 8열 */
+.tile.hl{background:var(--wash)}
+.tiles.t8w .tile{padding-inline:12px}
+.tiles.t8w .t-r{font-size:11.5px;gap:4px}
 .tile{padding:12px 14px 11px;box-shadow:1px 0 0 var(--grid),0 1px 0 var(--grid)}
 .t-l{font-size:12px;color:var(--ink-2)}
 .t-v{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:2px 0 4px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .t-v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:3px}
-.t-c{font-size:11px;color:var(--muted);margin-top:3px}
 .t-r{display:flex;justify-content:space-between;gap:6px;white-space:nowrap;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .t-r b{font-weight:600;color:var(--ink)}
-.t-r.t-ex{margin-top:2px;align-items:flex-end}
 .neg{color:var(--neg)!important}
 .pos{color:var(--pos)!important}
 
@@ -755,7 +757,7 @@ function renderTrend(main) {
   const tt = split ? C.TOTAL : S.trType, T = TS[tt];
   const X = cmpCtx(at), cmpAt = X.prev;
   const who = (tt === C.TOTAL ? (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 ${types.length}개 유형 합계`) : tt) + (filt ? ' · ' + filt : '');
-  let h = `<section><div class="sec-h"><h2>실적 요약</h2><span class="desc">${X.custom ? '실적기간 ' : ''}${esc(X.curTip)}${!X.custom && at.partial ? ' 진행 중' : ''} · ${modeN} · ${esc(who)} · ${X.label}: ${esc(X.prevTip)} 대비</span></div><div class="tiles t7" id="tiles"></div></section>`;
+  let h = `<section><div class="sec-h"><h2>실적 요약</h2><span class="desc">${X.custom ? '실적기간 ' : ''}${esc(X.curTip)}${!X.custom && at.partial ? ' 진행 중' : ''} · ${modeN} · ${esc(who)} · ${X.label}: ${esc(X.prevTip)} 대비</span></div><div class="tiles t8" id="tiles"></div></section>`;
 
   const hid = new Set(S.yearHide || []);
   const lg = keys.map((y, k) => `<button type="button" class="lgb" data-yh="${B - k}" aria-pressed="${!hid.has(B - k)}" title="눌러서 그래프에 보이기 · 숨기기">${keySvg(styles[k])}${esc(Y.custom ? `${yName(y)} ${y === 'c' ? rangeTxt(Y.cu.c0, Y.cu.c1) : rangeTxt(Y.cu.p0, Y.cu.p1)}` : yName(y))}</button>`).join('');
@@ -787,7 +789,7 @@ function renderTrend(main) {
   $id('tiles').innerHTML = C.METRICS.map(m => {
     const v = periodVal(m, T, X.cur), c = periodVal(m, T, cmpAt);
     const d1 = fmtD(v, c, m.lowerBetter);
-    return `<div class="tile"><div class="t-l">${m.n}</div>
+    return `<div class="tile${HL_METS.has(m.k) ? ' hl' : ''}"><div class="t-l">${m.n}</div>
       <div class="t-v">${C.fmt(m.kind, v)}${v != null && m.kind !== 'ratio' ? `<small>${unitS(m)}</small>` : ''}</div>
       <div class="t-r"><span>${X.label}</span><b class="${d1.c}">${d1.t}</b></div>
       <div class="t-r"><span>${X.name}</span><span>${C.fmt(m.kind, c)}</span></div></div>`;
@@ -1182,8 +1184,8 @@ function notesTrend() {
     <li>DA(페이먼츠): DA 중 매체 PAYCO·토스 + 채널 링크사(링크프라이스·다음제휴) / DA: 그 외 DA(포탈·SNS·생활밀착형앱)</li>
     <li>메시지: 광고유형 Message · PA: 광고유형 PA(상품피드) · 합계 = 선택한 유형의 합</li>
     <li>미분류(APP·viral·'-') 제외: ${(un.rows || 0).toLocaleString()}행 · 광고비 ${C.fmt('money', un.cost || 0)}백만원 · 가입 ${(un.join || 0).toLocaleString()}명 (전체 기간)</li>
-    <li>UV = UV(전체) · 비회원UV = UV(비회원) · <b>가입률 = 가입 ÷ 비회원UV</b> · <b>첫구매율 = 첫구매객수 ÷ 가입</b> (합계 ÷ 합계)</li>
-    <li><b>첫구매객수 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · 순결제거래액 = 순결제거래액(전체) · <b>순결제 ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계)</li>
+    <li>UV = UV(전체) · 비회원UV = UV(비회원) · <b>가입률 = 가입 ÷ 비회원UV</b> · <b>첫구매전환율 = 첫구매객수 ÷ UV</b> · 구매고객수 = 총결제고객수 (비율은 합계 ÷ 합계)</li>
+    <li><b>첫구매객수 = 총결제고객수(첫구매)</b> · 첫구매거래액 = 총결제거래액(첫구매) — 일보고서 시트 '첫구매수'(순결제 기준)보다 큼. 신규고객수 = 당년신규순결제고객수 · 신규거래액 = 당년신규순결제거래액 · 순결제거래액 = 순결제거래액(전체) · <b>순결제ROAS = 순결제거래액 ÷ 광고비</b>(합계 ÷ 합계) · 첫구매거래액 · 신규거래액 카드는 연한 파랑으로 강조</li>
     <li>일평균 = 기간 합 ÷ 데이터가 있는 일수. CPA·비율 = 합계 ÷ 합계(일평균의 평균 아님). 광고비 음수 행(서비스비용 조정분)도 그대로 합산</li>
     <li>흐름 · 실적 표: 기준 연도(파란 실선) · 전년(진회색 실선) · 전전년(회색 점선)을 겹쳐 그림. 월 — 같은 달(진행 중인 달은 앞의 해도 같은 일수만) / 주 · 일 — 364일 · 728일 전 같은 요일. 전년비 = 기준 연도 vs 바로 앞 해</li>
     <li>비교 '선택': 흐름 · 실적 표가 실적기간(파란 실선) vs 비교기간(진회색 점선)으로 바뀜 — 같은 순서의 날짜끼리(1일째 ↔ 1일째, 월별 · 주별 · 일별 버튼으로 묶음 단위 선택), 표 맨 앞 열 = 기간 전체</li>
@@ -1326,8 +1328,9 @@ function compo(idx) {
 const ymd = d => d ? `${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8)}` : '';
 function sgn(p, dp = 1) { if (p == null || !isFinite(p)) return '–'; const t = Math.abs(p).toFixed(dp); return +t === 0 ? `${(0).toFixed(dp)}%` : `${p > 0 ? '+' : '-'}${t}%`; }
 function clsP(p, lowerBetter) { if (p == null || Math.abs(p) < 0.05) return ''; return (lowerBetter ? p < 0 : p > 0) ? 'pos' : 'neg'; }
-// 첫구매 진단 지표 카드 — 추이 지표 14개 + 구매고객 · 첫구매 전환율 (전부 표시)
-const DG_METS = [...C.METRICS.map(m => m.k), 'buy', 'fpu'];
+// 첫구매 진단 지표 카드 — 추이 카드와 같은 15개 · 같은 순서 (전부 표시)
+const DG_METS = C.METRICS.map(m => m.k);
+const HL_METS = new Set(['fpr', 'nrev']);   // 카드에서 연한 파랑으로 강조
 // 드릴다운 표 열로 고르는 지표 — 기본 첫구매거래액 · 신규거래액
 const DG_DEF = ['fpr', 'nrev'];
 function dgMets() { const m = new Set(S.diag.mets || []); const out = DG_METS.filter(k => m.has(k)); return out.length ? out : DG_DEF.slice(); }
@@ -1424,7 +1427,7 @@ function diagCard(bl, F, mv) {
     ${line(`신규거래액 계절요일보정 대비 ${pctB(v('nrev'))} = 신규고객수 ${pctB(v('nb'))} × 신규 객단가 ${pctB(naov)}`, [
       moveLines(mv.nrev.md, '매체별'), moveLines(mv.nrev.camp, '매체 상세(캠페인)'),
     ], driver(v('nrev'), [['신규고객수', v('nb')], ['신규 객단가', naov]]))}
-    ${line(`효율(계절요일보정 대비): 광고비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제 ROAS ${pctB(v('roas'))}`, [], eff)}`;
+    ${line(`효율(계절요일보정 대비): 광고비 ${pctB(cost)} · 첫구매CPA ${pctB(fcpa, true)} · 순결제ROAS ${pctB(v('roas'))}`, [], eff)}`;
 }
 
 // 진단 직접 편집 — 구간 · 비교 연도 · 필터마다 하나, 이 브라우저에 저장하고 백업 내려받기에 함께 담는다
@@ -1461,10 +1464,10 @@ function diagNote(bl, F, mv, DT, rg) {
   const when = saved ? `${saved.updated ? saved.updated.slice(0, 10).replace(/-/g, '.') : ''} 편집${saved.r1 && saved.r1 !== rg.r1 ? ` · ${ymd(saved.r1)}까지 데이터 기준 — 지금 숫자와 다를 수 있음` : ''}` : '';
   const tools = DGN_EDIT
     ? '<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>'
-    : `<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 진단 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
+    : `<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 리뷰 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
   return `<div class="card pad judge dgn" style="margin-top:12px">
-    <div class="dgn-bar"><b>진단</b><span class="hint">${DGN_EDIT ? '편집 중 — 글자를 고치고 저장 (Ctrl+B 굵게)' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 진단 (편집본 있음 · ${esc(when)})` : '자동 진단 — 편집을 누르면 직접 고칠 수 있다'}</span><span class="dgn-tools">${tools}</span></div>
-    <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="진단 편집"' : ''}>${body}</div>
+    <div class="dgn-bar"><b>리뷰</b><span class="hint">${DGN_EDIT ? '편집 중 — 글자를 고치고 저장 (Ctrl+B 굵게)' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 리뷰 (편집본 있음 · ${esc(when)})` : ''}</span><span class="dgn-tools">${tools}</span></div>
+    <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="리뷰 편집"' : ''}>${body}</div>
     <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
 }
 function dgnSave() {
@@ -1482,18 +1485,20 @@ function renderDiag(main) {
   }
   const F = S.diag, DT = dgDates(), rg = dgRanges(), src = P.source.row || {}, mets = dgMets();
   const series = C.daily(R, { where: dgWhere() }).get('_') || C.addSeries([], C.ROW_METS, R.dates.length);
-  const bl = C.baseline(R, series, rg, [...new Set([...DG_METS, 'fps'])]), rows = bl.rows;
+  const bl = C.baseline(R, series, rg, [...new Set([...DG_METS, 'fps', 'fpj'])]), rows = bl.rows;
   const filt = filterSummary() || '광고 전체';
   const hasRef = rg.refBase.length > 0 && rg.refRecent.length > 0;
   const years = Object.entries(R.dates.reduce((a, d) => { const y = d.slice(0, 4); a[y] = (a[y] || 0) + 1; return a; }, {}));
 
   let h = `<section><div class="sec-h"><h2>베이스라인 대비 최근 · ${esc(filt)}</h2><span class="desc">최근 일평균 · 비율은 합계 ÷ 합계 · 대비 % 옆 숫자 = 베이스라인 / 계절요일보정 값</span></div>
-    <div class="tiles t8">${DG_METS.map(k => {
+    <div class="tiles t8 t8w">${DG_METS.map(k => {
       const M = C.METRIC[k], r = rows[k], lb = M.lowerBetter;
-      return `<div class="tile"><div class="t-l">${esc(M.n)}</div>
+      return `<div class="tile${HL_METS.has(k) ? ' hl' : ''}"><div class="t-l">${esc(M.n)}</div>
         <div class="t-v">${dgFmt(M.kind, r.recent)}${r.recent != null && M.kind !== 'ratio' ? `<small>${dgUnit(M.kind)}</small>` : ''}</div>
-        <div class="t-c">베이스라인 대비</div><div class="t-r"><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b><span>${dgFmt(M.kind, r.base)}</span></div>
-        <div class="t-c">${exName(r)} 대비</div><div class="t-r"><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b><span>${dgFmt(M.kind, r.ex)}</span></div></div>`;
+        <div class="t-r"><span>베이스라인 대비</span><b class="${clsP(r.chg, lb)}">${sgn(r.chg)}</b></div>
+        <div class="t-r"><span>${exName(r)} 대비</span><b class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</b></div>
+        <div class="t-r"><span>베이스라인</span><span>${dgFmt(M.kind, r.base)}</span></div>
+        <div class="t-r"><span>${exName(r)}</span><span>${dgFmt(M.kind, r.ex)}</span></div></div>`;
     }).join('')}</div>
     ${diagNote(bl, F, mediaMoves(rg), DT, rg)}
       ${expDetail(bl, mets.find(k => C.METRIC[k].kind === 'count' || C.METRIC[k].kind === 'money') || 'fpr', F.refY)}</div></section>`;
@@ -1714,7 +1719,7 @@ document.addEventListener('click', e => {
   if (t.id === 'dgnCancel') { DGN_EDIT = false; render(true); return; }
   if (t.id === 'dgnSave') { dgnSave(); return; }
   if (t.id === 'dgnToggle') { DGN_AUTO = !DGN_AUTO; render(true); return; }
-  if (t.id === 'dgnReset') { if (confirm('이 구간의 진단 편집본을 지우고 자동 진단으로 되돌릴까요?')) { DGN.remove(dgnKey(dgDates())); DGN_AUTO = false; render(true); } return; }
+  if (t.id === 'dgnReset') { if (confirm('이 구간의 리뷰 편집본을 지우고 자동 리뷰로 되돌릴까요?')) { DGN.remove(dgnKey(dgDates())); DGN_AUTO = false; render(true); } return; }
   if (ds.dgmet != null) { const m = new Set(dgMets()); m.has(ds.dgmet) ? m.delete(ds.dgmet) : m.add(ds.dgmet); if (m.size) { S.diag.mets = DG_METS.filter(k => m.has(k)); render(true); } return; }
   if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
   if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }

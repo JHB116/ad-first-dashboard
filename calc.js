@@ -9,29 +9,29 @@
   const TOTAL = '합계';
   const ROW_METS = ['cost', 'uv', 'uvn', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb', 'nrv'];
 
-  // 화면 지표(추이 순서) — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
+  // 화면 지표(추이 · 첫구매 진단 카드 순서 — 8개 + 7개) — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1)
   const METRICS = [
     { k: 'cost', n: '광고비', kind: 'money', base: ['cost'], f: s => s.cost },
-    { k: 'uv', n: 'UV', kind: 'count', base: ['uv'], f: s => s.uv },
-    { k: 'uvn', n: '비회원UV', kind: 'count', base: ['uvn'], f: s => s.uvn },
     { k: 'join', n: '가입', kind: 'count', base: ['join'], f: s => s.join },
     { k: 'jcpa', n: '가입CPA', kind: 'cpa', base: ['cost', 'join'], f: s => div(s.cost, s.join), lowerBetter: true },
     { k: 'jr', n: '가입률', kind: 'ratio', base: ['join', 'uvn'], f: s => div(s.join, s.uvn) },         // 가입 ÷ 비회원UV
     { k: 'fp', n: '첫구매객수', kind: 'count', base: ['fp'], f: s => s.fp },
-    { k: 'fcpa', n: '첫구매CPA', kind: 'cpa', base: ['cost', 'fp'], f: s => div(s.cost, s.fp), lowerBetter: true },
     { k: 'fpr', n: '첫구매거래액', kind: 'money', base: ['fpr'], f: s => s.fpr },
-    { k: 'fpj', n: '첫구매율', kind: 'ratio', base: ['fp', 'join'], f: s => div(s.fp, s.join) },         // 첫구매객수 ÷ 가입
+    { k: 'fcpa', n: '첫구매CPA', kind: 'cpa', base: ['cost', 'fp'], f: s => div(s.cost, s.fp), lowerBetter: true },
+    { k: 'fpu', n: '첫구매전환율', kind: 'ratio', base: ['fp', 'uv'], f: s => div(s.fp, s.uv) },      // 첫구매객수 ÷ UV
     { k: 'nb', n: '신규고객수', kind: 'count', base: ['nb'], f: s => s.nb },
     { k: 'nrev', n: '신규거래액', kind: 'money', base: ['nrev'], f: s => s.nrev },
+    { k: 'uv', n: 'UV', kind: 'count', base: ['uv'], f: s => s.uv },
+    { k: 'uvn', n: '비회원UV', kind: 'count', base: ['uvn'], f: s => s.uvn },
     { k: 'nrv', n: '순결제거래액', kind: 'money', base: ['nrv'], f: s => s.nrv },
-    { k: 'roas', n: '순결제 ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },   // 순결제거래액 ÷ 광고비
+    { k: 'roas', n: '순결제ROAS', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },    // 순결제거래액 ÷ 광고비
+    { k: 'buy', n: '구매고객수', kind: 'count', base: ['buy'], f: s => s.buy },
   ];
-  // 드릴다운 · 첫구매 진단에만 쓰는 보조 지표
+  // 드릴다운 · 첫구매 진단(리뷰)에만 쓰는 보조 지표
   const EXTRA = [
+    { k: 'fpj', n: '첫구매율', kind: 'ratio', base: ['fp', 'join'], f: s => div(s.fp, s.join) },         // 첫구매객수 ÷ 가입
     { k: 'fpn', n: '첫구매(순결제)', kind: 'count', base: ['fpn'], f: s => s.fpn },
-    { k: 'buy', n: '구매고객', kind: 'count', base: ['buy'], f: s => s.buy },
     { k: 'fps', n: '첫구매 비중', kind: 'ratio', base: ['fp', 'buy'], f: s => div(s.fp, s.buy) },   // 첫구매 ÷ 구매고객(총결제)
-    { k: 'fpu', n: '첫구매 전환율', kind: 'ratio', base: ['fp', 'uv'], f: s => div(s.fp, s.uv) },    // 첫구매 ÷ UV
   ];
   const METRIC = Object.fromEntries([...METRICS, ...EXTRA].map(m => [m.k, m]));
 
