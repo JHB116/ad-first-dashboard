@@ -240,6 +240,8 @@ table.tg tr.r-prev th.stick{color:var(--ink-2);font-weight:400}
 .dgn-bar{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-bottom:4px}
 .dgn-tools{margin-left:auto;display:flex;gap:10px;align-items:center}
 .dgn-body{display:grid;gap:4px}
+.dgn-tb{margin:4px 0 8px;padding:4px 6px;border:1px solid var(--grid);border-radius:8px;background:var(--surface-2)}
+.dgn-tb .ink.pos{color:var(--pos)}.dgn-tb .ink.neg{color:var(--neg)}
 .dgn-body.editing{outline:1px dashed var(--border);outline-offset:6px;border-radius:4px;min-height:60px}
 .more{margin-top:2px}
 .more>summary{display:inline;cursor:pointer;list-style:none;font-size:11px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:2px}
@@ -1446,7 +1448,7 @@ function diagCard(bl, F, mv) {
 
 // 진단 직접 편집 — 구간 · 비교 연도 · 필터마다 하나, 이 브라우저에 저장하고 백업 내려받기에 함께 담는다
 const DGN_KEY = 'ad-new-dashboard-diagnotes';
-const DGN_CLS = new Set(['h', 'l2', 'l3', 'pos', 'neg', 'hint']);
+const DGN_CLS = new Set(['h', 'l2', 'l3', 'pos', 'neg', 'hint']);   // 편집본에 남기는 클래스 (줄 모양 · 증감 색)
 let DGN_MEM = null, DGN_EDIT = false, DGN_AUTO = false;   // 편집 중 · 편집본 대신 자동 진단 보기
 const dgnRead = () => {
   if (DGN_MEM) return DGN_MEM;
@@ -1480,10 +1482,78 @@ function diagNote(bl, F, mv, DT, rg) {
     ? '<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>'
     : `<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 리뷰 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
   return `<div class="card pad judge dgn" style="margin-top:12px">
-    <div class="dgn-bar"><b>리뷰</b><span class="hint">${DGN_EDIT ? '편집 중 — 글자를 고치고 저장 (Ctrl+B 굵게)' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 리뷰 (편집본 있음 · ${esc(when)})` : ''}</span><span class="dgn-tools">${tools}</span></div>
+    <div class="dgn-bar"><b>리뷰</b><span class="hint">${DGN_EDIT ? '편집 중 — 줄을 고르고 □ 제목 · ㄴ 하위 · > 결론으로 모양을 바꾸거나, 글자를 골라 굵게 · 색 · 형광' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 리뷰 (편집본 있음 · ${esc(when)})` : ''}</span><span class="dgn-tools">${tools}</span></div>
+    ${DGN_EDIT ? dgnToolbar() : ''}
     <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="리뷰 편집"' : ''}>${body}</div>
     <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
 }
+// 리뷰 편집 서식 — 자동 리뷰와 같은 줄 모양(□ 제목 · ㄴ 하위 · > 결론)과 글자 서식
+const DGN_LINES = [['h', '□ 제목', '□ '], ['l2', 'ㄴ 하위', 'ㄴ '], ['l3', '> 결론', '> '], ['', '본문', '']];
+const DGN_INK = [['pos', '초록 (증가 · 좋음)'], ['neg', '빨강 (감소 · 나쁨)'], ['', '기본색']];
+function dgnToolbar() {
+  return `<div class="memo-tb dgn-tb" id="dgnTb" role="toolbar" aria-label="리뷰 서식">`
+    + DGN_LINES.map(([c, l]) => `<button type="button" data-dgnline="${c}" title="이 줄을 ${l.replace(/^\S+ /, '')} 모양으로">${l}</button>`).join('')
+    + '<span class="sep"></span>'
+    + MEMO_TOOLS.map(([cmd, t, l]) => `<button type="button" data-memocmd="${cmd}" title="${esc(t)}" aria-label="${esc(t)}">${l}</button>`).join('')
+    + '<span class="sep"></span>'
+    + DGN_INK.map(([c, t]) => `<button type="button" class="ink${c ? ' ' + c : ''}" data-dgnink="${c}" title="${esc(t)}" aria-label="${esc(t)}">가</button>`).join('')
+    + '<span class="sep"></span>'
+    + MEMO_HL.map(([c, t]) => `<button type="button" class="hl" data-memohl="${c}" title="${esc(t)}" aria-label="${esc(t)}" style="background:${c || 'transparent'}"></button>`).join('')
+    + '</div>';
+}
+// 커서가 있는 줄(편집 칸 바로 아래 div) — 글자만 있는 줄이면 div 로 감싼다
+function dgnBlock() {
+  const body = $id('dgnBody'), sel = getSelection();
+  if (!body || !sel.rangeCount || !body.contains(sel.anchorNode)) return null;
+  let n = sel.anchorNode;
+  while (n && n.parentNode !== body) n = n.parentNode;
+  if (!n || n.nodeType !== 1 || n.tagName !== 'DIV') { document.execCommand('formatBlock', false, 'div'); n = getSelection().anchorNode; while (n && n.parentNode !== body) n = n.parentNode; }
+  return n && n.nodeType === 1 ? n : null;
+}
+function dgnLine(cls) {
+  const el = dgnBlock(); if (!el) return;
+  el.className = cls;
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let tn = w.nextNode();
+  while (tn && !tn.nodeValue.trim()) tn = w.nextNode();
+  const pfx = (DGN_LINES.find(x => x[0] === cls) || ['', '', ''])[2];
+  const sel = getSelection(), r0 = sel.rangeCount ? sel.getRangeAt(0) : null;
+  const caret = r0 && r0.startContainer === tn ? r0.startOffset : null;   // 머리글을 바꿔도 커서가 제자리에 있게
+  if (tn) {
+    const old = tn.nodeValue, rest = old.replace(/^\s*(□|ㄴ|>)\s*/, ''), cut = old.length - rest.length;
+    tn.nodeValue = pfx + rest;
+    if (caret != null) { const r = document.createRange(); r.setStart(tn, Math.min(tn.nodeValue.length, Math.max(0, caret - cut) + pfx.length)); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); }
+  } else if (pfx) {
+    const t = document.createTextNode(pfx);
+    if (el.firstChild && el.firstChild.nodeName === 'BR') el.replaceChild(t, el.firstChild); else el.insertBefore(t, el.firstChild);
+    const r = document.createRange(); r.setStart(t, pfx.length); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+  }
+}
+// 고른 글자에 증가 · 감소 색(다크 모드에서도 맞는 pos · neg 클래스) — 기본색이면 색을 뺀다
+function dgnInk(cls) {
+  const sel = getSelection(), body = $id('dgnBody');
+  if (!sel.rangeCount || sel.isCollapsed || !body || !body.contains(sel.anchorNode)) return;
+  // insertHTML 은 클래스를 고정 색으로 바꿔 버려서, 고른 범위를 직접 감싼다
+  const range = sel.getRangeAt(0), frag = range.extractContents();
+  frag.querySelectorAll('.pos,.neg').forEach(e => e.classList.remove('pos', 'neg'));
+  frag.querySelectorAll('[style]').forEach(e => { e.style.color = ''; });
+  frag.querySelectorAll('font[color]').forEach(e => e.removeAttribute('color'));
+  const wrap = document.createElement('span');
+  if (cls) wrap.className = cls;
+  wrap.appendChild(frag);
+  range.insertNode(wrap);
+  const r = document.createRange(); r.selectNodeContents(wrap); sel.removeAllRanges(); sel.addRange(r);
+}
+document.addEventListener('mousedown', e => {
+  const b = e.target.closest('#dgnTb button'); if (!b) return;
+  e.preventDefault();                 // 고른 글자가 풀리지 않게 — 동작도 mousedown 에서
+  const ds = b.dataset;
+  if (ds.dgnline != null) dgnLine(ds.dgnline);
+  else if (ds.dgnink != null) dgnInk(ds.dgnink);
+  else if (ds.memocmd) document.execCommand(ds.memocmd, false, null);
+  else if (ds.memohl != null) { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, ds.memohl || 'transparent'); document.execCommand('styleWithCSS', false, false); }
+});
+
 function dgnSave() {
   const el = $id('dgnBody'); if (!el) return;
   const DT = dgDates(), html = memoClean(el.innerHTML, DGN_CLS);
@@ -1764,7 +1834,7 @@ document.addEventListener('click', e => {
   if (ds.tw != null) { const o = new Set(S.drill.open); o.has(ds.tw) ? o.delete(ds.tw) : o.add(ds.tw); S.drill.open = [...o]; render(true); return; }
   if (ds.sel != null) { S.drill.sel = ds.sel; render(true); const s = $id('drSelSec'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
-  if (t.id === 'dgnEdit') { DGN_EDIT = true; render(true); const el = $id('dgnBody'); if (el) el.focus(); return; }
+  if (t.id === 'dgnEdit') { DGN_EDIT = true; render(true); const el = $id('dgnBody'); if (el) { document.execCommand('defaultParagraphSeparator', false, 'div'); el.focus(); } return; }
   if (t.id === 'dgnCancel') { DGN_EDIT = false; render(true); return; }
   if (t.id === 'dgnSave') { dgnSave(); return; }
   if (t.id === 'dgnToggle') { DGN_AUTO = !DGN_AUTO; render(true); return; }
