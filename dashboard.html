@@ -150,6 +150,9 @@ table.grid{border-collapse:separate;border-spacing:0;font-size:12.5px;font-varia
 .grid tbody tr:nth-child(even) td{background-image:linear-gradient(var(--row-alt),var(--row-alt))}
 .grid tr.tot td{font-weight:650;border-top:1px solid var(--ink-2)}
 .grid td.cur,.grid th.cur{background-color:var(--wash)!important}
+.grid td.cur{font-weight:600;color:var(--ink)}
+.grid td.fill{color:var(--muted)}
+.grid td.fill small{margin-left:1px}
 .grid .sub{display:block;font-size:11px;color:var(--muted);line-height:1.2}
 .grid .grp{text-align:center;border-left:1px solid var(--grid)}
 .grid .bl{border-left:1px solid var(--grid)}
@@ -506,7 +509,7 @@ function customRange(at) {
   return { c0: x0, c1: x1, p0: y0, p1: y1, cur: C.rangeIdx(R, x0, x1), prev: C.rangeIdx(R, y0, y1) };
 }
 const rangeTxt = (a, b) => a === b ? a.slice(2).replace(/-/g, '.') : `${a.slice(2).replace(/-/g, '.')}~${b.slice(a.slice(0, 4) === b.slice(0, 4) ? 5 : 2).replace(/-/g, '.')}`;
-// 요약 타일 · 드릴다운이 함께 쓰는 비교: cur(실적 날짜) · prev(비교 날짜) · other(둘째 줄 비교)
+// 요약 타일 · 드릴다운이 함께 쓰는 비교: cur(실적 날짜) · prev(비교 날짜)
 function cmpCtx(at) {
   if (S.cmp === 'custom') {
     const cu = customRange(at);
@@ -1334,9 +1337,20 @@ const DG_COMP = {
   nrev: { n: '신규거래액', num: 'nrev', den: 'nrv', dn: '순결제거래액', rn: '신규거래액 비중' },
   fp: { n: '첫구매객수', num: 'fp', den: 'buy', dn: '구매고객', rn: '첫구매 비중' },
 };
-// 진단 표기: 명 소수 1자리(1,000 이상은 정수) · 금액 백만원 · CPA 만원 · 비율 %(1% 미만은 소수 2자리)
+// 진단 표기: 명 소수 1자리(1,000 이상은 정수) · 금액 늘 백만원(1백만원 미만은 소수 2자리, '만' 단위 안 섞음) · CPA 만원 · 비율 %(1% 미만은 소수 2자리)
 const dgFmt = (kind, v) => kind === 'ratio' ? C.fmt('ratio', v, { dp: v != null && Math.abs(v) < 0.01 ? 2 : 1 })
-  : kind === 'count' ? C.fmtNum(v, v != null && Math.abs(v) >= 1000 ? 0 : 1) : C.fmt(kind, v);
+  : kind === 'count' ? C.fmtNum(v, v != null && Math.abs(v) >= 1000 ? 0 : 1)
+  : kind === 'money' ? C.fmt('money', v, { fixed: true, dp: v != null && Math.abs(v) < 1e6 ? 2 : 1 }) : C.fmt(kind, v);
+// 항목에 비교 연도 같은 구간 실적이 없어(새 항목 · 리포트를 넣기 전 기간) 계절요일보정을 못 구하면 상위 항목(T — 드릴다운은 바로 위 단계, 구성 효과는 합계)의 계절 배수를 쓴다 — 표에 * 표시
+function exFill(r, T) {
+  if (r.ex != null || r.recent == null || !T || T.ex == null) return r;
+  const adj = T.adjBase && r.adjBase != null, k = adj ? T.ex / T.adjBase : (T.base ? T.ex / T.base : null), b = adj ? r.adjBase : r.base;
+  if (k == null || b == null) return r;
+  const ex = b * k;
+  return { ...r, ex, vsEx: C.pct(r.recent, ex), filled: true };
+}
+const exCell = (kind, r) => r.filled ? `<td class="fill" title="이 항목은 비교 연도 같은 구간 실적이 없어 상위 항목의 계절 배수를 씀">${dgFmt(kind, r.ex)}<small>*</small></td>` : `<td>${dgFmt(kind, r.ex)}</td>`;
+const FILL_NOTE = '<div class="hint" style="margin-top:6px">* = 비교 연도 같은 구간에 그 항목 실적이 없어(새 항목 · 사이트검색 리포트를 넣기 전 기간 등) 상위 항목(드릴다운은 바로 위 단계, 구성 효과는 합계)의 계절 배수로 계산한 계절요일보정</div>';
 const dgUnit = kind => kind === 'ratio' ? '' : C.unit(kind, 'avg');
 const exName = r => r.exKind === 'season' ? '계절보정' : '계절요일보정';
 
@@ -1392,7 +1406,7 @@ function mediaMoves(rg) {
   }
   return out;
 }
-const moveTxt = list => list.length ? list.map(x => `${esc(x.name)} <b class="${clsP(x.gap)}">${x.gap > 0 ? '+' : ''}${C.fmt('money', x.gap)}</b>(${sgn(x.p)})`).join(' · ') : '없음';
+const moveTxt = list => list.length ? list.map(x => `${esc(x.name)} <b class="${clsP(x.gap)}">${x.gap > 0 ? '+' : ''}${dgFmt('money', x.gap)}</b>(${sgn(x.p)})`).join(' · ') : '없음';
 const moveLines = (m, label) => !m ? '' : `${label}: 감소 ${moveTxt(m.down)} / 증가 ${moveTxt(m.up)}`;
 function diagCard(bl, F, mv) {
   const r = bl.rows, ex = M => C.expectRow(M, bl.sums, bl.days, bl).vsEx;
@@ -1451,7 +1465,7 @@ function diagNote(bl, F, mv, DT, rg) {
   return `<div class="card pad judge dgn" style="margin-top:12px">
     <div class="dgn-bar"><b>진단</b><span class="hint">${DGN_EDIT ? '편집 중 — 글자를 고치고 저장 (Ctrl+B 굵게)' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 진단 (편집본 있음 · ${esc(when)})` : '자동 진단 — 편집을 누르면 직접 고칠 수 있다'}</span><span class="dgn-tools">${tools}</span></div>
     <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="진단 편집"' : ''}>${body}</div>
-    <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원 · 작으면 만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
+    <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
 }
 function dgnSave() {
   const el = $id('dgnBody'); if (!el) return;
@@ -1491,7 +1505,7 @@ function renderDiag(main) {
   h += `<section><div class="sec-h"><h2>드릴다운 · 베이스라인 vs 최근</h2><span class="desc">일평균 · 계절요일보정은 위와 같은 방식으로 항목마다 계산</span><div class="tools"><button class="lnk" id="dgFold" type="button">모두 접기</button><button class="btn" data-csv-for="dgTree" data-name="첫구매진단_드릴다운">CSV</button></div></div>
     <div class="card pad" style="margin-bottom:12px"><span class="field">단계 ${[0, 1, 2, 3].map(dimSel).join(' › ')}</span> <span class="hint">디바이스를 넣으면 APP 결제 쪽 변화를 따로 볼 수 있다</span>
       <div class="tr-pick" style="margin:10px 0 0"><span class="hint">표 지표</span><div class="seg" role="group" aria-label="표 지표">${DG_METS.map(k => `<button type="button" data-dgmet="${k}" aria-pressed="${mets.includes(k)}">${esc(C.METRIC[k].n)}</button>`).join('')}</div></div></div>
-    <div class="card tbl-wrap"><table class="grid" id="dgTree"></table></div></section>`;
+    <div class="card tbl-wrap"><table class="grid" id="dgTree"></table></div>${FILL_NOTE}</section>`;
 
   const types = R.dims.t, CM = DG_COMP[F.compMet] || DG_COMP.fpr;
   if (F.compType && !types.includes(F.compType)) F.compType = '';
@@ -1505,7 +1519,7 @@ function renderDiag(main) {
       <label class="field" style="flex:1;min-width:260px">시즌 항목 <input type="text" id="dgSeason" style="flex:1" value="${esc(F.season)}" placeholder="쉼표로 구분 (구성 기준 값과 같은 이름)"></label>
     </div></div>
     <div class="row2" style="margin-top:12px"><div class="card cc"><div class="cc-t">${esc(CM.n)} 일평균 증감 폭포</div><div class="cc-s">베이스라인 → 항목별 증감 → 최근 · ${esc(dgUnit(C.METRIC[CM.num].kind))}</div><div class="cc-b" id="dgWf"></div></div><div class="card pad judge" id="dgMix"></div></div>
-    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div>
+    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div>${FILL_NOTE}
     <div class="sec-h"><h2 style="font-size:13px">월별 ${esc(CM.rn)} — 시즌 항목 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="dgBrMon" data-name="첫구매진단_시즌_월별">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
@@ -1534,24 +1548,27 @@ function renderDgTree(rg, mets) {
   const base = [...new Set([...mets, sk].flatMap(k => C.METRIC[k].base))], sm = C.METRIC[sk].base[0];
   const t = C.tree(R, { where: dgWhere(), dims, sets: es.sets, mets: base });
   const d = t.days, open = new Set(F.open);
-  const cells = s => mets.map(k => {
-    const M = C.METRIC[k], r = C.expectRow(M, s, d, es), lb = M.lowerBetter;
-    return `<td class="bl">${dgFmt(M.kind, r.base)}</td><td>${dgFmt(M.kind, r.recent)}</td><td>${dgFmt(M.kind, r.ex)}</td><td class="${clsP(r.chg, lb)}">${sgn(r.chg)}</td><td class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</td>`;
+  // 행마다 지표별 값 — 비교 연도 실적이 없는 항목은 바로 위 단계(P)의 계절 배수
+  const rowsOf = (s, P) => Object.fromEntries(mets.map(k => [k, exFill(C.expectRow(C.METRIC[k], s, d, es), P && P[k])]));
+  const cells = rs => mets.map(k => {
+    const M = C.METRIC[k], r = rs[k], lb = M.lowerBetter;
+    return `<td class="bl">${dgFmt(M.kind, r.base)}</td>${exCell(M.kind, r)}<td class="cur">${dgFmt(M.kind, r.recent)}</td><td class="${clsP(r.chg, lb)}">${sgn(r.chg)}</td><td class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</td>`;
   }).join('');
+  const TOT = rowsOf(t.total, null);
   const size = n => Math.abs(n.s[0][sm] / (d[0] || 1)) + Math.abs(n.s[1][sm] / (d[1] || 1));
   let body = '';
-  const walk = (pk, L) => {
+  const walk = (pk, L, P) => {
     const kids = C.children(t, pk, L).filter(n => base.some(m => n.s[0][m] || n.s[1][m])).sort((a, b) => (size(b) || 0) - (size(a) || 0));
     for (const n of kids) {
-      const can = L < dims.length - 1, isO = can && open.has(n.key);
-      body += `<tr><td style="padding-left:${10 + L * 18}px" data-csv="${esc('  '.repeat(L) + n.v)}">${can ? `<button class="tw" data-dgtw="${esc(n.key)}" aria-expanded="${isO}">${isO ? '▾' : '▸'}</button>` : '<span class="tw"></span>'}<span class="lv">${DIM_NAME[n.dim]}</span>${esc(n.v)}</td>${cells(n.s)}</tr>`;
-      if (isO) walk(n.key, L + 1);
+      const can = L < dims.length - 1, isO = can && open.has(n.key), rs = rowsOf(n.s, P);
+      body += `<tr><td style="padding-left:${10 + L * 18}px" data-csv="${esc('  '.repeat(L) + n.v)}">${can ? `<button class="tw" data-dgtw="${esc(n.key)}" aria-expanded="${isO}">${isO ? '▾' : '▸'}</button>` : '<span class="tw"></span>'}<span class="lv">${DIM_NAME[n.dim]}</span>${esc(n.v)}</td>${cells(rs)}</tr>`;
+      if (isO) walk(n.key, L + 1, rs);
     }
   };
-  walk('', 0);
+  walk('', 0, TOT);
   $id('dgTree').innerHTML = `<thead><tr><th></th>${mets.map(k => { const M = C.METRIC[k], u = dgUnit(M.kind); return `<th class="grp bl" colspan="5">${esc(M.n)}${u ? ` <span class="sub">${u}</span>` : ''}</th>`; }).join('')}</tr>
-    <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th>${mets.map(() => '<th class="bl">베이스라인</th><th>최근</th><th>계절요일보정</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>').join('')}</tr></thead>
-    <tbody><tr class="tot"><td>합계</td>${cells(t.total)}</tr>${body}</tbody>`;
+    <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th>${mets.map(() => '<th class="bl">베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>').join('')}</tr></thead>
+    <tbody><tr class="tot"><td>합계</td>${cells(TOT)}</tr>${body}</tbody>`;
 }
 function seasonList() { return S.diag.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
 function renderDgComp(rg, CM) {
@@ -1588,14 +1605,14 @@ function renderDgComp(rg, CM) {
     ${!F.exSeason && sRows.length ? `<div class="l2">시즌 항목(${esc(sRows.map(r => r.name).join('·'))}) ${esc(CM.n)} ${f(sF0)} → ${f(sF1)} · 베이스라인 ${esc(CM.n)}의 ${dgFmt('ratio', C.div(sF0, dec.F0))} → 최근 ${dgFmt('ratio', C.div(sF1, dec.F1))}</div>` : ''}
     ${!F.exSeason && season.size && !sRows.length ? `<div class="l2 hint">시즌 항목 이름이 '${esc(DIM_NAME[dim])}' 값과 하나도 맞지 않습니다</div>` : ''}
     <div class="l3">&gt; ${Math.abs(dec.mix) > Math.abs(dec.within) ? '구성 효과가 더 큼 — 구성 변화(시즌 종료 · 캠페인 · 이벤트)가 주원인으로 추정' : '내부 효과가 더 큼 — 구성 변화로 설명되지 않는 비중 변화, 트래킹 · 전환 이슈 가능성 有'}</div>`;
-  const nCells = (e, dv) => `<td>${f(e.base)}</td><td>${f(e.recent)}</td><td>${f(e.ex)}</td><td class="${clsP(e.chg)}">${sgn(e.chg)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td><td class="${clsP(dv)}">${dv > 0 ? '+' : ''}${f(dv)}</td>`;
-  const rCells = e => `<td class="bl">${dgFmt('ratio', e.base)}</td><td>${dgFmt('ratio', e.recent)}</td><td>${dgFmt('ratio', e.ex)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td>`;
+  const nCells = (e, dv) => { e = exFill(e, EN); return `<td>${f(e.base)}</td>${exCell(kind, e)}<td class="cur">${f(e.recent)}</td><td class="${clsP(e.chg)}">${sgn(e.chg)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td><td class="${clsP(dv)}">${dv > 0 ? '+' : ''}${f(dv)}</td>`; };
+  const rCells = e => { e = exFill(e, ER); return `<td class="bl">${dgFmt('ratio', e.base)}</td>${exCell('ratio', e)}<td class="cur">${dgFmt('ratio', e.recent)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td>`; };
   const u = unitN ? ` <span class="sub">${unitN}</span>` : '';
   $id('dgBr').innerHTML = `<thead><tr><th></th><th class="grp" colspan="7">${esc(CM.n)}${u}</th><th class="grp bl" colspan="2">${esc(CM.dn)}${u}</th><th class="grp bl" colspan="4">${esc(CM.rn)}</th><th class="grp bl" colspan="2">비중 변화 분해</th></tr>
-    <tr><th>${esc(DIM_NAME[dim])}</th><th>베이스라인</th><th>최근</th><th>계절요일보정</th><th>베이스라인 대비</th><th>계절요일보정 대비</th><th>Δ</th><th>Δ 기여</th><th class="bl">베이스라인</th><th>최근</th><th class="bl">베이스라인</th><th>최근</th><th>계절요일보정</th><th>계절요일보정 대비</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
-    <tr class="tot"><td>합계</td>${nCells(EN, dec.F1 - dec.F0)}<td>100%</td><td class="bl">${f(dec.O0)}</td><td>${f(dec.O1)}</td>${rCells(ER)}<td class="bl">${rel(dec.mix)}</td><td>${rel(dec.within)}</td></tr>
+    <tr><th>${esc(DIM_NAME[dim])}</th><th>베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>베이스라인 대비</th><th>계절요일보정 대비</th><th>Δ</th><th>Δ 기여</th><th class="bl">베이스라인</th><th class="cur">최근</th><th class="bl">베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>계절요일보정 대비</th><th class="bl">구성 효과</th><th>내부 효과</th></tr></thead><tbody>
+    <tr class="tot"><td>합계</td>${nCells(EN, dec.F1 - dec.F0)}<td>100%</td><td class="bl">${f(dec.O0)}</td><td class="cur">${f(dec.O1)}</td>${rCells(ER)}<td class="bl">${rel(dec.mix)}</td><td>${rel(dec.within)}</td></tr>
     ${rows.map(r => `<tr><td>${esc(r.name)}${r.season ? ' <span class="lv">시즌</span>' : ''}</td>${nCells(eN(r.s), r.dfp)}<td>${dec.F1 - dec.F0 ? C.fmt('ratio', r.dfp / (dec.F1 - dec.F0), { dp: 0 }) : '–'}</td>
-      <td class="bl">${f(r.b.buy)}</td><td>${f(r.r.buy)}</td>${rCells(eR(r.s))}<td class="bl ${clsP(r.mix)}">${rel(r.mix)}</td><td class="${clsP(r.within)}">${rel(r.within)}</td></tr>`).join('')}</tbody>`;
+      <td class="bl">${f(r.b.buy)}</td><td class="cur">${f(r.r.buy)}</td>${rCells(eR(r.s))}<td class="bl ${clsP(r.mix)}">${rel(r.mix)}</td><td class="${clsP(r.within)}">${rel(r.within)}</td></tr>`).join('')}</tbody>`;
 
   // 월별 비중 — 베이스라인 시작 월부터 최근 월까지
   const valid = rg.valid, col = R.f[dim], vals = R.dims[dim];

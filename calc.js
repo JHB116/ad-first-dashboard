@@ -434,7 +434,7 @@
     if (v == null || !isFinite(v)) return '–';
     if (kind === 'money') {
       if (Math.abs(v) < 1e5 && v !== 0 && !opt.fixed) return fmtNum(v / 1e4, 1) + '만';
-      return fmtNum(v / 1e6, 1);
+      return fmtNum(v / 1e6, opt.dp != null ? opt.dp : 1);
     }
     if (kind === 'cpa') return fmtNum(v / 1e4, 1);
     if (kind === 'ratio') return fmtNum(v * 100, opt.dp != null ? opt.dp : 1) + '%';
