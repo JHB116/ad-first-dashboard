@@ -1553,6 +1553,18 @@ document.addEventListener('mousedown', e => {
   else if (ds.memocmd) document.execCommand(ds.memocmd, false, null);
   else if (ds.memohl != null) { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, ds.memohl || 'transparent'); document.execCommand('styleWithCSS', false, false); }
 });
+// Enter 로 새 줄을 열면 브라우저가 윗줄의 클래스(□ 제목 = 굵게)와 색 span 까지 복사한다 — 빈 새 줄은 본문으로 시작
+document.addEventListener('input', e => {
+  if (e.target.id !== 'dgnBody' || e.inputType !== 'insertParagraph') return;
+  const body = e.target, sel = getSelection();
+  if (!sel.rangeCount) return;
+  let el = sel.anchorNode;
+  while (el && el.parentNode !== body) el = el.parentNode;
+  if (!el || el.nodeType !== 1 || memoPlain(el)) return;   // 줄 중간에서 나눈 경우는 그대로
+  el.removeAttribute('class');
+  el.innerHTML = '<br>';
+  const r = document.createRange(); r.setStart(el, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+});
 
 function dgnSave() {
   const el = $id('dgnBody'); if (!el) return;
