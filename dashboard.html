@@ -1449,6 +1449,16 @@ function diagCard(bl, F, mv) {
 // 진단 직접 편집 — 구간 · 비교 연도 · 필터마다 하나, 이 브라우저에 저장하고 백업 내려받기에 함께 담는다
 const DGN_KEY = 'ad-new-dashboard-diagnotes';
 const DGN_CLS = new Set(['h', 'l2', 'l3', 'pos', 'neg', 'hint']);   // 편집본에 남기는 클래스 (줄 모양 · 증감 색)
+// 편집본 정리 — 예전에 Enter 로 □ 제목 · > 결론 줄의 모양(굵게)을 물려받아 저장된 줄은 머리글이 없으니 본문으로 되돌린다
+function dgnClean(html) {
+  const box = document.createElement('div');
+  box.innerHTML = memoClean(html, DGN_CLS);
+  for (const el of box.children) {
+    const t = (el.textContent || '').replace(/\u00a0/g, ' ').trim();
+    if ((el.classList.contains('h') && !t.startsWith('□')) || (el.classList.contains('l3') && !t.startsWith('>'))) el.removeAttribute('class');
+  }
+  return box.innerHTML;
+}
 let DGN_MEM = null, DGN_EDIT = false, DGN_AUTO = false;   // 편집 중 · 편집본 대신 자동 진단 보기
 const dgnRead = () => {
   if (DGN_MEM) return DGN_MEM;
@@ -1466,7 +1476,7 @@ const DGN = {
     const cur = { ...dgnRead() }; let n = 0;
     for (const [k, v] of Object.entries(o)) {
       if (!v || typeof v.html !== 'string' || k.length > 300) continue;
-      if (!cur[k] || String(v.updated || '') > String(cur[k].updated || '')) { cur[k] = { ...v, html: memoClean(v.html, DGN_CLS) }; n++; }
+      if (!cur[k] || String(v.updated || '') > String(cur[k].updated || '')) { cur[k] = { ...v, html: dgnClean(v.html) }; n++; }
     }
     if (n) dgnWrite(cur);
     return n;
@@ -1476,7 +1486,7 @@ function dgnKey(DT) { return [DT.b0, DT.b1, DT.r0, S.diag.refY, JSON.stringify(S
 function diagNote(bl, F, mv, DT, rg) {
   const key = dgnKey(DT), saved = DGN.get(key), auto = diagCard(bl, F, mv);
   const showSaved = saved && !DGN_AUTO && !DGN_EDIT;
-  const body = DGN_EDIT ? memoClean(saved && !DGN_AUTO ? saved.html : auto, DGN_CLS) : showSaved ? memoClean(saved.html, DGN_CLS) : auto;
+  const body = DGN_EDIT ? dgnClean(saved && !DGN_AUTO ? saved.html : auto) : showSaved ? dgnClean(saved.html) : auto;
   const when = saved ? `${saved.updated ? saved.updated.slice(0, 10).replace(/-/g, '.') : ''} 편집${saved.r1 && saved.r1 !== rg.r1 ? ` · ${ymd(saved.r1)}까지 데이터 기준 — 지금 숫자와 다를 수 있음` : ''}` : '';
   const tools = DGN_EDIT
     ? '<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>'
@@ -1568,7 +1578,7 @@ document.addEventListener('input', e => {
 
 function dgnSave() {
   const el = $id('dgnBody'); if (!el) return;
-  const DT = dgDates(), html = memoClean(el.innerHTML, DGN_CLS);
+  const DT = dgDates(), html = dgnClean(el.innerHTML);
   if (memoPlain(el)) DGN.set(dgnKey(DT), { html, r1: dgRanges().r1, updated: new Date().toISOString() });
   else DGN.remove(dgnKey(DT));
   DGN_EDIT = false; DGN_AUTO = false; render(true);
