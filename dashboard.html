@@ -1449,14 +1449,30 @@ function diagCard(bl, F, mv) {
 // 진단 직접 편집 — 구간 · 비교 연도 · 필터마다 하나, 이 브라우저에 저장하고 백업 내려받기에 함께 담는다
 const DGN_KEY = 'ad-new-dashboard-diagnotes';
 const DGN_CLS = new Set(['h', 'l2', 'l3', 'pos', 'neg', 'hint']);   // 편집본에 남기는 클래스 (줄 모양 · 증감 색)
-// 편집본 정리 — 예전에 Enter 로 □ 제목 · > 결론 줄의 모양(굵게)을 물려받아 저장된 줄은 머리글이 없으니 본문으로 되돌린다
-function dgnClean(html) {
-  const box = document.createElement('div');
-  box.innerHTML = memoClean(html, DGN_CLS);
+// 머리글(□ · >) 없이 제목 · 결론 모양인 줄은 본문으로 — Enter · 붙여넣기 때 브라우저가 윗줄 모양(굵게)을 물려줘서 생긴다
+function dgnPlainLines(box) {
   for (const el of box.children) {
     const t = (el.textContent || '').replace(/\u00a0/g, ' ').trim();
     if ((el.classList.contains('h') && !t.startsWith('□')) || (el.classList.contains('l3') && !t.startsWith('>'))) el.removeAttribute('class');
   }
+}
+// 편집본 정리 — 한 줄 안에 <br> 로 이어진 여러 줄은 줄마다 나누고(모양은 첫 줄만), 위 규칙 적용
+function dgnClean(html) {
+  const box = document.createElement('div');
+  box.innerHTML = memoClean(html, DGN_CLS);
+  for (const el of [...box.children]) {
+    if (el.tagName !== 'DIV' || ![...el.childNodes].some(n => n.nodeName === 'BR')) continue;
+    const lines = [[]];
+    for (const n of [...el.childNodes]) { if (n.nodeName === 'BR') lines.push([]); else lines[lines.length - 1].push(n); }
+    if (lines.length > 1 && !lines[lines.length - 1].length) lines.pop();   // 줄 끝 <br>
+    el.replaceWith(...lines.map((ns, i) => {
+      const d = document.createElement('div');
+      if (i === 0 && el.className) d.className = el.className;
+      if (ns.length) d.append(...ns); else d.appendChild(document.createElement('br'));
+      return d;
+    }));
+  }
+  dgnPlainLines(box);
   return box.innerHTML;
 }
 let DGN_MEM = null, DGN_EDIT = false, DGN_AUTO = false;   // 편집 중 · 편집본 대신 자동 진단 보기
@@ -1563,17 +1579,25 @@ document.addEventListener('mousedown', e => {
   else if (ds.memocmd) document.execCommand(ds.memocmd, false, null);
   else if (ds.memohl != null) { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, ds.memohl || 'transparent'); document.execCommand('styleWithCSS', false, false); }
 });
-// Enter 로 새 줄을 열면 브라우저가 윗줄의 클래스(□ 제목 = 굵게)와 색 span 까지 복사한다 — 빈 새 줄은 본문으로 시작
+// Enter 로 새 줄을 열면 브라우저가 윗줄의 클래스(□ 제목 = 굵게)와 색 span 까지 복사한다 — 빈 새 줄은 본문으로 시작.
+// 붙여넣기 · 입력으로 생긴 머리글 없는 제목 · 결론 줄도 바로 본문으로
 document.addEventListener('input', e => {
-  if (e.target.id !== 'dgnBody' || e.inputType !== 'insertParagraph') return;
+  if (e.target.id !== 'dgnBody') return;
   const body = e.target, sel = getSelection();
-  if (!sel.rangeCount) return;
+  dgnPlainLines(body);
+  if (e.inputType !== 'insertParagraph' || !sel.rangeCount) return;
   let el = sel.anchorNode;
   while (el && el.parentNode !== body) el = el.parentNode;
   if (!el || el.nodeType !== 1 || memoPlain(el)) return;   // 줄 중간에서 나눈 경우는 그대로
   el.removeAttribute('class');
   el.innerHTML = '<br>';
   const r = document.createRange(); r.setStart(el, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+});
+// Shift+Enter 도 줄 나눔(<br>)이 아니라 새 줄로 — 한 줄 안에 여러 줄이 들어가 모양을 같이 쓰지 않게
+document.addEventListener('beforeinput', e => {
+  if (e.target.id !== 'dgnBody' || e.inputType !== 'insertLineBreak') return;
+  e.preventDefault();
+  document.execCommand('insertParagraph');
 });
 
 function dgnSave() {
