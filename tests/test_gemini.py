@@ -81,7 +81,9 @@ def test_prompts():
     assert gm.PROMPTS['memo'] is gm.PROMPT and gm.PROMPTS['diag'] is gm.PROMPT_DIAG
     for p in gm.PROMPTS.values():
         assert p.rstrip().endswith('[근거]') and '앱 이용자 누적' in p
-    assert '계절요일보정' in gm.PROMPT_DIAG and "'> '" in gm.PROMPT_DIAG
+    assert '계절요일보정' in gm.PROMPT_DIAG and '> 확인:' in gm.PROMPT_DIAG and '→ 확인:' in gm.PROMPT
+    for p in gm.PROMPTS.values():   # 형식: 판정 → 매체별(광고유형) 1) 감소 · 2) 증가, 예시는 자리표시 숫자만(공개 저장소)
+        assert '□ 매체별' in p and '1) 감소' in p and '2) 증가' in p and '쇼핑검색광고' in p and 'x.x백만원' in p
 
 
 def test_network_errors_become_gemini_error(monkeypatch):
