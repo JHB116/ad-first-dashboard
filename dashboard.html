@@ -390,7 +390,7 @@ const DEF = {
   page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 4, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'default' },
-  diag: { b0: '2026-07-01', b1: '', r0: '', r1: '', refY: 2025, mets: ['fpr', 'nrev'], compMet: 'fpr', dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp', season: '우포스, 킨, 아일랜드슬리퍼', exSeason: false },
+  diag: { b0: '2026-07-01', b1: '', r0: '', r1: '', refY: 2025, mets: ['fpr', 'nrev'], compMet: 'fpr', dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp' },
 };
 let S = load();
 if ((S.viewV || 0) < 2) S.view = 'split';                 // 유형별을 기본으로 바꾼 뒤 한 번만 — 이후엔 고른 보기를 기억
@@ -2001,13 +2001,10 @@ function renderDiag(main) {
       <label class="field">기준 지표 <select id="dgCompMet">${Object.entries(DG_COMP).map(([k, c]) => `<option value="${k}"${CM === c ? ' selected' : ''}>${esc(c.n)}</option>`).join('')}</select></label>
       <label class="field">광고유형 <select id="dgCompType"><option value="">전체(필터 기준)</option>${types.map(x => `<option${x === F.compType ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
       <label class="field">구성 기준 <select id="dgCompDim">${avail.filter(k => k !== 't').map(k => `<option value="${k}"${F.compDim === k ? ' selected' : ''}>${DIM_NAME[k]}</option>`).join('')}</select></label>
-      <label class="field"><input type="checkbox" id="dgExSeason"${F.exSeason ? ' checked' : ''}> 시즌 항목 제외</label>
-      <label class="field" style="flex:1;min-width:260px">시즌 항목 <input type="text" id="dgSeason" style="flex:1" value="${esc(F.season)}" placeholder="쉼표로 구분 (구성 기준 값과 같은 이름)"></label>
     </div></div>
     <div class="row2" style="margin-top:12px"><div class="card cc"><div class="cc-t">${esc(CM.n)} ${CM.mode === 'ratio' ? '변화 기여' : '일평균 증감'} 폭포</div><div class="cc-s"><span id="dgWfRef">계절요일보정</span> → 항목별 ${CM.mode === 'ratio' ? '기여(구성 + 내부)' : '증감'} → 최근 · ${esc(CM.mode === 'ratio' ? (CM.rk === 'cpa' ? '만원' : '%p') : dgUnit(C.METRIC[CM.num].kind))}</div><div class="cc-b" id="dgWf"></div></div><div class="card pad judge" id="dgMix"></div></div>
     <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div><div class="hint" id="dgBrNote" style="margin-top:4px"></div>${FILL_NOTE}
-    <div class="sec-h"><h2 style="font-size:13px">월별 ${esc(CM.den ? CM.rn : CM.n)} — 시즌 항목 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="dgBrMon" data-name="첫구매진단_시즌_월별">CSV</button></div></div>
-    <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
+</section>
     <section><div class="card pad"><ul class="notes">
       <li>구매고객 = 총결제고객수 · 첫구매객수 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매전환율 = 첫구매객수 ÷ 비회원UV · 가입첫구매전환율 = 첫구매객수 ÷ 가입자수 · 첫구매 객단가 = 첫구매거래액 ÷ 첫구매객수 · 신규 객단가 = 신규거래액 ÷ 신규고객수</li>
       <li>구성 효과 분해는 <b>계절요일보정 → 최근</b>을 나눈다(항목마다 분자 · 분모의 계절요일보정에서 출발, 비교 연도 데이터가 없으면 베이스라인). 폭포 · Δ · 기여 · 구성/내부 효과 모두 같은 출발점</li>
@@ -2057,16 +2054,14 @@ function renderDgTree(rg, mets) {
     <tr><th>${dims.map(k => DIM_NAME[k]).join(' › ')}</th>${mets.map(() => '<th class="bl">베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>').join('')}</tr></thead>
     <tbody><tr class="tot"><td>합계</td>${cells(TOT)}</tr>${body}</tbody>`;
 }
-function seasonList() { return S.diag.season.split(/[,，\n]/).map(s => s.trim()).filter(Boolean); }
 function renderDgComp(rg, CM) {
-  const F = S.diag, DT = dgDates(), dim = F.compDim, season = new Set(seasonList());
+  const F = S.diag, dim = F.compDim;
   const { num, den } = CM, kind = C.METRIC[num] ? C.METRIC[num].kind : 'money', unitN = dgUnit(kind), f = v => dgFmt(kind, v), fr = v => dgFmt(CM.rk, v);
   const where = { ...dgWhere(), ...(F.compType ? { t: new Set([F.compType]) } : {}) };
   const es = C.expSets(R, rg), mets = [num, den].filter(Boolean);
   const t = C.tree(R, { where, dims: [dim], sets: es.sets, mets });
   const d = t.days;
-  let items = [...t.nodes.values()].map(n => ({ name: n.v, season: season.has(n.v), s: n.s }));
-  if (F.exSeason) items = items.filter(x => !x.season);
+  const items = [...t.nodes.values()].map(n => ({ name: n.v, s: n.s }));
   // 계절요일보정 — 항목별, 합계는 남은 항목의 합으로
   const tot = es.sets.map((_, k) => Object.fromEntries(mets.map(m => [m, items.reduce((a, x) => a + x.s[k][m], 0)])));
   const NM = C.METRIC[num] || { base: [num], f: s => s[num] }, RM = { base: [num, den], f: s => C.div(s[num], s[den]) };
@@ -2088,17 +2083,14 @@ function renderDgComp(rg, CM) {
   const top = rows.slice(0, 8), rest = rows.slice(8);
   // 폭포: 명 · 금액은 항목별 증감, 비율 · CPA 는 항목별 비율 변화 기여 (표시 단위로)
   const sc = v => isR ? C.scaled(CM.rk, v) : C.scaled(kind, v), val = r => isR ? r.c : r.dfp;
-  const wf = [{ name: refN, v: sc(isR ? dec.R0 : dec.F0), total: true }, ...top.map(r => ({ name: r.name + (r.season ? ' ☀' : ''), v: sc(val(r)) }))];
+  const wf = [{ name: refN, v: sc(isR ? dec.R0 : dec.F0), total: true }, ...top.map(r => ({ name: r.name, v: sc(val(r)) }))];
   if (rest.length) wf.push({ name: `기타 ${rest.length}개`, v: sc(rest.reduce((a, r) => a + val(r), 0)) });
   wf.push({ name: '최근', v: sc(isR ? dec.R1 : dec.F1), total: true });
   waterfall($id('dgWf'), wf, { label: `항목별 ${CM.n} ${isR ? '변화 기여' : '증감'}` });
-  const sRows = rows.filter(r => r.season), sF0 = sRows.reduce((a, r) => a + r.b.fp, 0), sF1 = sRows.reduce((a, r) => a + r.r.fp, 0);
   if ($id('dgWfRef')) $id('dgWfRef').textContent = refN;
   const rel = v => dec.R0 ? sgn(v / dec.R0 * 100) : '–';
   const scope = `${F.compType || '필터 유형 전체'} · ${DIM_NAME[dim]}`;
   const exTxt = (e, fmt, lb) => e && e.ex != null ? ` · ${exName(e)} ${fmt(e.ex)} 대비 <b class="${clsP(e.vsEx, lb)}">${sgn(e.vsEx)}</b>` : '';
-  const seasonTxt = `${!F.exSeason && sRows.length ? `<div class="l2">시즌 항목(${esc(sRows.map(r => r.name).join('·'))}) ${esc(CM.nn)} ${f(sF0)} → ${f(sF1)} · ${esc(refN)} ${esc(CM.nn)}의 ${dgFmt('ratio', C.div(sF0, dec.F0))} → 최근 ${dgFmt('ratio', C.div(sF1, dec.F1))} (${esc(refN)} → 최근)</div>` : ''}
-    ${!F.exSeason && season.size && !sRows.length ? `<div class="l2 hint">시즌 항목 이름이 '${esc(DIM_NAME[dim])}' 값과 하나도 맞지 않습니다</div>` : ''}`;
   const numLine = `${esc(CM.nn)} ${esc(refN)} ${f(dec.F0)} → 최근 ${f(dec.F1)}${unitN ? ' ' + unitN : ''} (${sgn(C.pct(dec.F1, dec.F0))})`;
   // 표의 Δ · 기여 — 명 · 금액 Δ = 최근 − 계절요일보정(항목별), 기여 = 항목 Δ ÷ 항목 Δ 합(합 100%). 비율 · CPA 는 비율 변화 기여(구성 + 내부)
   rows.forEach(r => { r.dx = r.dfp; });
@@ -2107,15 +2099,14 @@ function renderDgComp(rg, CM) {
   if (!den) {
     const up = tRows.filter(r => r.dx > 0).slice(0, 3), dn = tRows.filter(r => r.dx < 0).slice(0, 3);
     const lst = l => l.length ? l.map(r => `${esc(r.name)} <b class="${clsP(r.dx, CM.lb)}">${r.dx > 0 ? '+' : ''}${f(r.dx)}</b>`).join(' · ') : '없음';
-    $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${numLine}${exTxt(EN, f, CM.lb)}${F.exSeason ? ' · 시즌 항목 제외' : ''}</div>
-      <div class="l2">ㄴ ${esc(refN)} 대비 감소 ${lst(dn)} / 증가 ${lst(up)}</div>${seasonTxt}
+    $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${numLine}${exTxt(EN, f, CM.lb)}</div>
+      <div class="l2">ㄴ ${esc(refN)} 대비 감소 ${lst(dn)} / 증가 ${lst(up)}</div>
       <div class="l3">&gt; 나눌 분모가 없는 지표라 구성 · 내부 효과로 나누지 않는다 — 표의 항목별 증감 · 계절요일보정 대비를 본다</div>`;
   } else {
-    $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${esc(CM.rn)} ${esc(refN)} ${fr(dec.R0)} → 최근 ${fr(dec.R1)} (${sgn(C.pct(dec.R1, dec.R0))})${F.exSeason ? ' · 시즌 항목 제외' : ''}</div>
+    $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${esc(CM.rn)} ${esc(refN)} ${fr(dec.R0)} → 최근 ${fr(dec.R1)} (${sgn(C.pct(dec.R1, dec.R0))})</div>
       <div class="l2">${numLine} · ${esc(CM.dn)} ${dgFmt(C.METRIC[den] ? C.METRIC[den].kind : kind, dec.O0)} → ${dgFmt(C.METRIC[den] ? C.METRIC[den].kind : kind, dec.O1)} (${sgn(C.pct(dec.O1, dec.O0))})</div>
       <div class="h" style="margin-top:6px">ㄴ ${isR ? '' : '비중 '}변화 분해 (${esc(refN)} ${esc(CM.rn)} 대비 — 항목마다 분자 · 분모의 ${esc(refN)}에서 출발)</div>
       <div class="l2">구성 효과(항목별 ${esc(CM.dn)} 비중 변화) <b class="${clsP(dec.mix, CM.lb && isR)}">${rel(dec.mix)}</b> · 내부 효과(같은 항목의 ${esc(CM.rn)} 변화) <b class="${clsP(dec.within, CM.lb && isR)}">${rel(dec.within)}</b></div>
-      ${seasonTxt}
       <div class="l3">&gt; ${Math.abs(dec.mix) > Math.abs(dec.within) ? '구성 효과가 더 큼 — 구성 변화(시즌 종료 · 캠페인 · 이벤트)가 주원인으로 추정' : `내부 효과가 더 큼 — 구성 변화로 설명되지 않는 ${esc(CM.rn)} 변화, 트래킹 · 전환 이슈 가능성 有`}</div>`;
   }
   // 표
@@ -2131,7 +2122,7 @@ function renderDgComp(rg, CM) {
   const u = unitN ? ` <span class="sub">${unitN}</span>` : '', ud = dgUnit(dk) ? ` <span class="sub">${dgUnit(dk)}</span>` : '';
   const H5 = '<th>베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>';
   const mixH = '<th class="bl">구성 효과</th><th>내부 효과</th>', mixC = r => `<td class="bl ${clsP(r.mix, lbR)}">${rel(r.mix)}</td><td class="${clsP(r.within, lbR)}">${rel(r.within)}</td>`;
-  const name = r => `<td>${esc(r.name)}${r.season ? ' <span class="lv">시즌</span>' : ''}</td>`;
+  const name = r => `<td>${esc(r.name)}</td>`;
   let head, totRow, body;
   if (isR) {          // 비율 · CPA: 비율 묶음이 먼저(Δ = 비율 변화 기여), 그다음 분자 · 분모
     head = `<tr><th></th><th class="grp" colspan="7">${esc(CM.rn)}</th><th class="grp bl" colspan="2">${esc(CM.nn)}${u}</th><th class="grp bl" colspan="2">${esc(CM.dn)}${ud}</th><th class="grp bl" colspan="2">변화 분해</th></tr>
@@ -2159,27 +2150,6 @@ function renderDgComp(rg, CM) {
     : `Δ = 최근 − ${refN}${why} · 기여 = 항목 Δ ÷ 항목 Δ 합(합 100%, 음수 = 전체와 반대 방향) · 폭포도 ${refN}에서 출발`)
     + (tiny ? ` · 전체 변화가 ±0.5% 미만이라 기여는 생략(Δ 로 보세요)` : '')
     + (gap ? ` · 항목별 ${refN}은 항목마다 따로 계산해, 항목 Δ 합 ${sumDx > 0 ? '+' : ''}${f(sumDx)}이 합계 Δ ${totDx > 0 ? '+' : ''}${f(totDx)}와 다름(기여 · 폭포는 항목 합 기준)` : '');
-
-  // 월별 비중 — 베이스라인 시작 월부터 최근 월까지
-  const valid = rg.valid, col = R.f[dim], vals = R.dims[dim];
-  const s = C.daily(R, { where, group: i => season.has(vals[col[i]]) ? 's' : 'o' });
-  const nd = R.dates.length, Ss = s.get('s') || C.addSeries([], C.ROW_METS, nd), So = s.get('o') || C.addSeries([], C.ROW_METS, nd);
-  const months = [];
-  let y = +DT.b0.slice(0, 4), m = +DT.b0.slice(5, 7);
-  const endKey = rg.r1.slice(0, 7);
-  while (`${y}-${String(m).padStart(2, '0')}` <= endKey && months.length < 24) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
-  const cols = months.map(([yy, mm]) => {
-    const p2 = String(mm).padStart(2, '0');
-    const idx = C.rangeIdx(R, `${yy}-${p2}-01`, `${yy}-${p2}-${C.monthDays(yy, mm)}`, valid);
-    const a = C.sumIdx(Ss, idx, mets), o = C.sumIdx(So, idx, mets);
-    const per = v => idx.length ? v / idx.length : null;
-    return { lbl: `${String(yy).slice(2)}.${p2}`, n: idx.length, all: den ? C.div(a[num] + o[num], a[den] + o[den]) : per(a[num] + o[num]), ex: den ? C.div(o[num], o[den]) : per(o[num]), sf: C.div(a[num], a[num] + o[num]), sfn: per(a[num]) };
-  });
-  $id('dgBrMon').innerHTML = `<thead><tr><th>${esc(scope)}</th>${cols.map(c => `<th>${c.lbl}<span class="sub">${c.n}일</span></th>`).join('')}</tr></thead><tbody>
-    <tr><td>${esc(den ? CM.rn : CM.n + ' ' + unitN)} (전체)</td>${cols.map(c => `<td>${den ? fr(c.all) : f(c.all)}</td>`).join('')}</tr>
-    <tr class="tot"><td>${esc(den ? CM.rn : CM.n + ' ' + unitN)} (시즌 제외)</td>${cols.map(c => `<td>${den ? fr(c.ex) : f(c.ex)}</td>`).join('')}</tr>
-    <tr><td>시즌 항목 ${esc(CM.nn)} ${esc(unitN)}</td>${cols.map(c => `<td>${f(c.sfn)}</td>`).join('')}</tr>
-    <tr><td>시즌 항목 ${esc(CM.nn)} 점유</td>${cols.map(c => `<td>${dgFmt('ratio', c.sf)}</td>`).join('')}</tr></tbody>`;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2267,7 +2237,7 @@ document.addEventListener('click', e => {
   if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
   if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }
   if (t.id === 'cuReset') { S.custom = { c0: '', c1: '', p0: '', p1: '' }; render(true); return; }
-  if (t.id === 'dgReset') { const keep = { season: S.diag.season, dims: S.diag.dims, compType: S.diag.compType, compDim: S.diag.compDim, mets: S.diag.mets, compMet: S.diag.compMet }; S.diag = { ...structuredClone(DEF.diag), ...keep }; render(true); return; }
+  if (t.id === 'dgReset') { const keep = { dims: S.diag.dims, compType: S.diag.compType, compDim: S.diag.compDim, mets: S.diag.mets, compMet: S.diag.compMet }; S.diag = { ...structuredClone(DEF.diag), ...keep }; render(true); return; }
 });
 document.addEventListener('change', e => {
   const t = e.target;
@@ -2286,8 +2256,6 @@ document.addEventListener('change', e => {
   else if (t.id === 'dgCompMet') { S.diag.compMet = t.value; render(true); }
   else if (t.id === 'dgCompType') { S.diag.compType = t.value; render(true); }
   else if (t.id === 'dgCompDim') { S.diag.compDim = t.value; render(true); }
-  else if (t.id === 'dgExSeason') { S.diag.exSeason = t.checked; render(true); }
-  else if (t.id === 'dgSeason') { S.diag.season = t.value; render(true); }
 });
 let qTimer = null;
 document.addEventListener('input', e => {
