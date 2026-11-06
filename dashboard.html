@@ -1223,18 +1223,84 @@ function gemDiagHTML(text) {
 // 메모 위쪽(+ 메모 옆) 버튼 — Streamlit 연결 상태가 늦게 와도 이 자리만 다시 그린다
 function gemHeader() { const el = $id('memoGemHd'); if (el) el.innerHTML = gemBtn(true); }
 window.AD_GEMINI_STATUS = () => gemHeader();
+// ── 첫구매거래액 분해: 첫구매거래액 = 비회원UV × 가입률 × 가입첫구매전환율 × 첫구매객단가 (항등식)
+// 요인별 기여(%p) = 첫구매거래액 증감률 × ln(요인 비율) ÷ ln(첫구매거래액 비율) — 기여를 더하면 전체 증감률
+const FPR_FACTORS = ['uvn', 'jr', 'fpj', 'fpa'];
+const FPR_BASE = [...new Set(['fpr', ...FPR_FACTORS.flatMap(k => C.METRIC[k].base)])];
+const spct = p => p == null || !isFinite(p) ? '–' : (+Math.abs(p).toFixed(1) === 0 ? '0.0%' : (p < 0 ? '△' : '+') + Math.abs(p).toFixed(1) + '%');
+const spp = p => p == null || !isFinite(p) ? '–' : (+Math.abs(p).toFixed(1) === 0 ? '0.0%p' : (p < 0 ? '△' : '+') + Math.abs(p).toFixed(1) + '%p');
+const mUnit = () => (S.mode === 'avg' ? '백만원/일' : '백만원');
+const mAmt = v => v == null || !isFinite(v) ? '–' : (Math.abs(v) / 1e6).toFixed(Math.abs(v) < 1e6 ? 2 : 1) + mUnit();
+const mDelta = v => v == null || !isFinite(v) ? '–' : (v < 0 ? '△' : '+') + mAmt(v);
+// sums(비교) · sums(실적) · 일수 → 첫구매거래액 · 요인별 값 · 증감 · 기여
+function fprSplit(sp, sc, dp, dc) {
+  const val = (k, sums, d) => (sums && d ? C.value(C.METRIC[k], sums, d, S.mode) : null);
+  const a = val('fpr', sc, dc), b = val('fpr', sp, dp), p = C.pct(a, b);
+  const fs = FPR_FACTORS.map(k => { const x = val(k, sc, dc), y = val(k, sp, dp); return { k, n: C.METRIC[k].n, kind: C.METRIC[k].kind, cur: x, prev: y, p: C.pct(x, y) }; });
+  const ok = p != null && a > 0 && b > 0 && fs.every(f => f.cur > 0 && f.prev > 0), lnT = ok ? Math.log(a / b) : 0;
+  fs.forEach(f => { f.c = ok && Math.abs(lnT) > 1e-9 ? p * Math.log(f.cur / f.prev) / lnT : null; });
+  const dir = p == null ? 0 : Math.sign(p);
+  const main = fs.filter(f => f.c != null).sort((x, y) => dir * (y.c - x.c) || Math.abs(y.c) - Math.abs(x.c))[0] || null;   // 전체와 같은 방향으로 가장 크게 움직인 요인
+  return { cur: a, prev: b, d: a != null && b != null ? a - b : null, p, fs, main };
+}
+const fprEq = x => `첫구매거래액 ${spct(x.p)} = ${x.fs.map(f => `${f.n} ${spct(f.p)}`).join(' × ')}`;
+const fprMain = x => !x.main || x.p == null ? '' : Math.abs(x.p) < 0.5 ? '거의 변화 없음' : `${x.p < 0 ? '가장 크게 끌어내린' : '가장 크게 끌어올린'} 요인 = ${x.main.n}(${spp(x.main.c)})`;
+// 첫구매거래액 기준 진단 — 지표(요인)별 · 광고유형별 · 이슈 유형의 매체 · 캠페인별 (실적 vs 비교, 화면과 같은 기간 · 필터 · 일평균/누계)
+function fprFacts(X, types) {
+  const dims = ['t', 'md', ...(R.dims.camp ? ['camp'] : [])];
+  const t = C.tree(R, { where: { ...(srcWhere() || {}), t: new Set(types) }, dims, sets: [X.prev, X.cur], mets: FPR_BASE });
+  const [dp, dc] = t.days, sp = n => fprSplit(n.s[0], n.s[1], dp, dc);
+  const T = fprSplit(t.total[0], t.total[1], dp, dc), L = [];
+  const verdict = T.p == null ? '비교 불가' : T.p >= 0.5 ? '좋음(증가)' : T.p <= -0.5 ? '나쁨(감소)' : '보합';
+  L.push(`[판정 — 첫구매거래액 기준] ${mAmt(T.cur)} (${X.name} ${mAmt(T.prev)} · ${X.label} ${spct(T.p)} · 증감 ${mDelta(T.d)}) → ${verdict}`);
+  L.push('[1) 지표별 — 첫구매거래액 = 비회원UV × 가입률 × 가입첫구매전환율 × 첫구매객단가, 기여 %p 를 더하면 전체 증감률]');
+  L.push(`• ${fprEq(T)}`);
+  if (T.fs.some(f => f.c != null)) L.push(`• 요인별 기여: ${T.fs.map(f => `${f.n} ${spp(f.c)}`).join(' · ')}${fprMain(T) ? ' → ' + fprMain(T) : ''}`);
+  const opp = T.p == null ? [] : T.fs.filter(f => f.c != null && f.c * T.p < 0 && Math.abs(f.c) >= 1);
+  if (opp.length) L.push(`• 반대 방향(상쇄): ${opp.map(f => `${f.n} ${spp(f.c)}`).join(' · ')}`);
+  for (const f of T.fs) L.push(`  ㄴ ${f.n} ${f.cur == null ? '–' : C.fmt(f.kind, f.cur, f.kind === 'ratio' && Math.abs(f.cur) < 0.01 ? { dp: 2 } : {}) + (f.kind === 'ratio' ? '' : C.unit(f.kind, S.mode))} (${X.name} ${f.prev == null ? '–' : C.fmt(f.kind, f.prev, f.kind === 'ratio' && Math.abs(f.prev) < 0.01 ? { dp: 2 } : {}) + (f.kind === 'ratio' ? '' : C.unit(f.kind, S.mode))} · ${spct(f.p)})`);
+  // 2) 광고유형별 — 첫구매거래액 증감(금액)과 전체 증감 중 몫, 유형 안의 요인
+  const tl = C.children(t, '', 0).map(n => ({ n, x: sp(n) })).filter(o => o.x.d != null).sort((a, b) => a.x.d - b.x.d);
+  if (tl.length > 1) {
+    L.push(`[2) 광고유형별 — 첫구매거래액 증감(${mUnit()}) 작은 순, 몫 = 전체 증감 ${mDelta(T.d)} 중 비율]`);
+    for (const { n, x } of tl) {
+      const share = T.d ? x.d / T.d * 100 : null;
+      L.push(`• ${n.v}: ${mAmt(x.cur)} (${X.name} ${mAmt(x.prev)} · ${spct(x.p)}) 증감 ${mDelta(x.d)}${share != null && isFinite(share) ? ` · 몫 ${share.toFixed(0)}%` : ''} | ${fprEq(x).replace('첫구매거래액 ', '')}${fprMain(x) ? ' | ' + fprMain(x) : ''}`);
+    }
+    // 이슈 유형 = 증감 금액이 큰 2개(전체와 같은 방향 먼저)
+    const dir = Math.sign(T.d || 0) || -1;
+    const issue = [...tl].sort((a, b) => (Math.sign(b.x.d) === dir) - (Math.sign(a.x.d) === dir) || Math.abs(b.x.d) - Math.abs(a.x.d)).slice(0, 2).filter(o => Math.abs(o.x.d) > 0);
+    for (const { n, x } of issue) {
+      L.push(`[이슈 유형 상세 — ${n.v} (증감 ${mDelta(x.d)}, ${spct(x.p)})]`);
+      // 매체 · 캠페인별 첫구매거래액 증감 — 감소 · 증가 큰 순 3개, 괄호 = 증감률 · 그 항목에서 가장 크게 움직인 요인
+      const lvl = (list, label, mdName) => {
+        const ks = list.map(m => ({ m, y: sp(m) })).filter(o => o.y.d != null && Math.abs(o.y.d) >= 5e3);
+        const down = ks.filter(o => o.y.d < 0).sort((a, b) => a.y.d - b.y.d).slice(0, 3), up = ks.filter(o => o.y.d > 0).sort((a, b) => b.y.d - a.y.d).slice(0, 3);
+        const nm = o => mdName ? `${o.m.v}(${R.dims.md[+o.m.key.split('|')[1]]})` : o.m.v;
+        const row = o => `${nm(o)} ${mDelta(o.y.d)}(${spct(o.y.p)}${o.y.main && Math.abs(o.y.p || 0) >= 0.5 ? ` · ${o.y.main.n} ${spct(o.y.main.p)}` : ''})`;
+        L.push(`• ${label} 감소: ${down.length ? down.map(row).join(' / ') : '없음'}`);
+        L.push(`• ${label} 증가: ${up.length ? up.map(row).join(' / ') : '없음'}`);
+      };
+      lvl(C.children(t, n.key, 1), '매체');
+      if (dims.length > 2) lvl([...t.nodes.values()].filter(m => m.level === 2 && m.key.startsWith(n.key + '|')), '캠페인', true);
+    }
+  }
+  return L;
+}
 // 근거(facts) — 화면과 같은 산식 · 표기(C.fmt · fmtD). 기간 · 비교 · 일평균/누계 · 유형 · 필터를 함께 적는다
 function memoFacts() {
   if (!R || S.page !== 'trend') return '';
   const TS = typeSeries(), types = selTypes(), Y = yearSlots(), at = Y.at, X = cmpCtx(at);
   const tt = S.view === 'split' ? C.TOTAL : S.trType, T = TS[tt] || TS[C.TOTAL], filt = filterSummary();
   const modeN = S.mode === 'avg' ? '일평균' : '누계', grainN = GRAIN_N[S.grain];
-  const vf = (m, v) => v == null ? '–' : C.fmt(m.kind, v, m.kind === 'ratio' && Math.abs(v) < 0.01 ? { dp: 2 } : {}) + (m.kind === 'ratio' ? '' : C.unit(m.kind, S.mode));
+  const vf = (m, v) => v == null ? '–' : m.kind === 'money' ? mAmt(v) : C.fmt(m.kind, v, m.kind === 'ratio' && Math.abs(v) < 0.01 ? { dp: 2 } : {}) + (m.kind === 'ratio' ? '' : C.unit(m.kind, S.mode));
   const val = (m, ser, idx) => (ser && idx && idx.length ? periodVal(m, ser, idx) : null);
   const who = (tt === C.TOTAL ? (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 유형 합계(${types.join('·')})`) : tt) + (filt ? ' · ' + filt : '');
   const L = [`[보기] ${grainN} · ${X.custom ? '실적기간 ' : ''}${X.curTip}${!X.custom && at.partial ? ' (진행 중 — 비교도 같은 일자까지)' : ''} · ${modeN} · ${who} · 비교 ${X.label}: ${X.prevTip}`,
     '[정의] 첫구매객수 · 첫구매거래액 = 총결제 기준(첫구매) · 가입률 · 첫구매전환율은 비회원UV 기준 · CPA · 객단가 단위 만원 · 증감 + 증가 / △ 감소'];
-  L.push(`[실적 요약 — ${who}, 괄호는 ${X.name} 값 · ${X.label}]`);
+  // 지표별 · 유형별 첫구매거래액 분해는 '광고유형' 기준(지표별 화면에서 한 유형을 고르면 그 유형만)
+  L.push(...fprFacts(X, tt === C.TOTAL ? types : [tt]));
+  L.push(`[참고 — 실적 요약 ${who}, 괄호는 ${X.name} 값 · ${X.label}]`);
   for (const m of C.METRICS) {
     const v = val(m, T, X.cur), c = val(m, T, X.prev);
     if (v == null && c == null) continue;
@@ -1250,13 +1316,6 @@ function memoFacts() {
         if (a == null) continue;
         L.push(`• ${m.n} ${vf(m, a)}` + (b != null ? ` · ${Y.names[y1]} ${vf(m, b)}(전년비 ${fmtD(a, b).t})` : '') + (c != null ? ` · ${Y.names[y2]} ${vf(m, c)}(전전년비 ${fmtD(a, c).t})` : ''));
       }
-    }
-  }
-  if (types.length > 1) {
-    L.push(`[광고유형별 — 괄호는 ${X.label}]`);
-    for (const t of types) {
-      const ser = TS[t], seg = KEY.filter(m => m.k !== 'roas' && m.k !== 'fpv').map(m => { const v = val(m, ser, X.cur); return v == null ? null : `${m.n} ${vf(m, v)}(${fmtD(v, val(m, ser, X.prev)).t})`; }).filter(Boolean);
-      if (seg.length) L.push(`• ${t}: ${seg.join(', ')}`);
     }
   }
   if (!X.custom) {   // 흐름 — 기준 연도의 최근 구간들과 전년비
