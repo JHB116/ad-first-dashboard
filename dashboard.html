@@ -1915,7 +1915,7 @@ function renderDiag(main) {
       <label class="field" style="flex:1;min-width:260px">시즌 항목 <input type="text" id="dgSeason" style="flex:1" value="${esc(F.season)}" placeholder="쉼표로 구분 (구성 기준 값과 같은 이름)"></label>
     </div></div>
     <div class="row2" style="margin-top:12px"><div class="card cc"><div class="cc-t">${esc(CM.n)} ${CM.mode === 'ratio' ? '변화 기여' : '일평균 증감'} 폭포</div><div class="cc-s">베이스라인 → 항목별 ${CM.mode === 'ratio' ? '기여(구성 + 내부)' : '증감'} → 최근 · ${esc(CM.mode === 'ratio' ? (CM.rk === 'cpa' ? '만원' : '%p') : dgUnit(C.METRIC[CM.num].kind))}</div><div class="cc-b" id="dgWf"></div></div><div class="card pad judge" id="dgMix"></div></div>
-    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div>${FILL_NOTE}
+    <div class="card tbl-wrap" style="margin-top:12px"><table class="grid" id="dgBr"></table></div><div class="hint" id="dgBrNote" style="margin-top:4px"></div>${FILL_NOTE}
     <div class="sec-h"><h2 style="font-size:13px">월별 ${esc(CM.den ? CM.rn : CM.n)} — 시즌 항목 포함/제외</h2><div class="tools"><button class="btn" data-csv-for="dgBrMon" data-name="첫구매진단_시즌_월별">CSV</button></div></div>
     <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
@@ -2001,11 +2001,17 @@ function renderDgComp(rg, CM) {
   const seasonTxt = `${!F.exSeason && sRows.length ? `<div class="l2">시즌 항목(${esc(sRows.map(r => r.name).join('·'))}) ${esc(CM.nn)} ${f(sF0)} → ${f(sF1)} · 베이스라인 ${esc(CM.nn)}의 ${dgFmt('ratio', C.div(sF0, dec.F0))} → 최근 ${dgFmt('ratio', C.div(sF1, dec.F1))}</div>` : ''}
     ${!F.exSeason && season.size && !sRows.length ? `<div class="l2 hint">시즌 항목 이름이 '${esc(DIM_NAME[dim])}' 값과 하나도 맞지 않습니다</div>` : ''}`;
   const numLine = `${esc(CM.nn)} ${f(dec.F0)} → ${f(dec.F1)}${unitN ? ' ' + unitN : ''} (${sgn(C.pct(dec.F1, dec.F0))})`;
+  // 표의 Δ · 기여 — 명 · 금액은 최근 − 계절요일보정(비교 연도 데이터가 없으면 베이스라인), 기여 = 항목 Δ ÷ 항목 Δ 합(합 100%)
+  const useEx = EN.ex != null, refN = useEx ? exName(EN) : '베이스라인';
+  const exD = r => { const e = exFill(eN(r.s), EN), ref = useEx ? e.ex : e.base; return e.recent != null && ref != null ? e.recent - ref : null; };
+  rows.forEach(r => { r.dx = exD(r); });
+  const sumDx = rows.reduce((a, r) => a + (r.dx || 0), 0), totDx = useEx ? EN.recent - EN.ex : EN.recent - EN.base;
+  const tRows = isR ? rows : [...rows].sort((a, b) => Math.abs(b.dx ?? 0) - Math.abs(a.dx ?? 0));
   if (!den) {
-    const up = rows.filter(r => r.dfp > 0).slice(0, 3), dn = rows.filter(r => r.dfp < 0).slice(0, 3);
-    const lst = l => l.length ? l.map(r => `${esc(r.name)} <b class="${clsP(r.dfp, CM.lb)}">${r.dfp > 0 ? '+' : ''}${f(r.dfp)}</b>`).join(' · ') : '없음';
+    const up = tRows.filter(r => r.dx > 0).slice(0, 3), dn = tRows.filter(r => r.dx < 0).slice(0, 3);
+    const lst = l => l.length ? l.map(r => `${esc(r.name)} <b class="${clsP(r.dx, CM.lb)}">${r.dx > 0 ? '+' : ''}${f(r.dx)}</b>`).join(' · ') : '없음';
     $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${numLine}${exTxt(EN, f, CM.lb)}${F.exSeason ? ' · 시즌 항목 제외' : ''}</div>
-      <div class="l2">ㄴ 감소 ${lst(dn)} / 증가 ${lst(up)}</div>${seasonTxt}
+      <div class="l2">ㄴ ${esc(refN)} 대비 감소 ${lst(dn)} / 증가 ${lst(up)}</div>${seasonTxt}
       <div class="l3">&gt; 나눌 분모가 없는 지표라 구성 · 내부 효과로 나누지 않는다 — 표의 항목별 증감 · 계절요일보정 대비를 본다</div>`;
   } else {
     $id('dgMix').innerHTML = `<div class="h">□ ${esc(scope)} ${esc(CM.rn)} ${fr(dec.R0)} → ${fr(dec.R1)} (${sgn(C.pct(dec.R1, dec.R0))})${isR ? exTxt(ER, fr, CM.lb) : ''}${F.exSeason ? ' · 시즌 항목 제외' : ''}</div>
@@ -2018,10 +2024,11 @@ function renderDgComp(rg, CM) {
   // 표
   const dk = den && C.METRIC[den] ? C.METRIC[den].kind : kind, fd = v => dgFmt(dk, v);
   const lbR = CM.lb && isR;
-  const nCells = (e, dv, share) => { e = exFill(e, EN); return `<td>${f(e.base)}</td>${exCell(kind, e)}<td class="cur">${f(e.recent)}</td><td class="${clsP(e.chg)}">${sgn(e.chg)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td><td class="${clsP(dv)}">${dv > 0 ? '+' : ''}${f(dv)}</td><td>${share}</td>`; };
+  const nCells = (e, dv, share) => { e = exFill(e, EN); return `<td>${f(e.base)}</td>${exCell(kind, e)}<td class="cur">${f(e.recent)}</td><td class="${clsP(e.chg)}">${sgn(e.chg)}</td><td class="${clsP(e.vsEx)}">${sgn(e.vsEx)}</td><td class="${clsP(dv)}">${dv == null ? '–' : (dv > 0 ? '+' : '') + f(dv)}</td><td>${share}</td>`; };
   const rCells = e => { e = exFill(e, ER); return `<td class="bl">${fr(e.base)}</td>${exCell(CM.rk, e)}<td class="cur">${fr(e.recent)}</td><td class="${clsP(e.vsEx, lbR)}">${sgn(e.vsEx)}</td>`; };
   const rCellsFull = (e, c, share) => { e = exFill(e, ER); return `<td>${fr(e.base)}</td>${exCell(CM.rk, e)}<td class="cur">${fr(e.recent)}</td><td class="${clsP(e.chg, lbR)}">${sgn(e.chg)}</td><td class="${clsP(e.vsEx, lbR)}">${sgn(e.vsEx)}</td><td class="${clsP(c, lbR)}">${c > 0 ? '+' : ''}${fr(c)}</td><td>${share}</td>`; };
-  const share = (x, all) => all ? C.fmt('ratio', x / all, { dp: 0 }) : '–';
+  const share = (x, all) => all && x != null ? C.fmt('ratio', x / all, { dp: 0 }) : '–';
+  const dH = `<th title="최근 − ${esc(refN)} (${unitN || '일평균'})">Δ${useEx ? '' : '(베이스라인 대비)'}</th><th title="항목 Δ ÷ 항목 Δ 합 — 합 100%, 음수 = 전체와 반대 방향">기여</th>`;
   const u = unitN ? ` <span class="sub">${unitN}</span>` : '', ud = dgUnit(dk) ? ` <span class="sub">${dgUnit(dk)}</span>` : '';
   const H5 = '<th>베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>베이스라인 대비</th><th>계절요일보정 대비</th>';
   const mixH = '<th class="bl">구성 효과</th><th>내부 효과</th>', mixC = r => `<td class="bl ${clsP(r.mix, lbR)}">${rel(r.mix)}</td><td class="${clsP(r.within, lbR)}">${rel(r.within)}</td>`;
@@ -2034,15 +2041,19 @@ function renderDgComp(rg, CM) {
     body = rows.map(r => `<tr>${name(r)}${rCellsFull(eR(r.s), r.c, share(r.c, dR))}<td class="bl">${f(r.b.fp)}</td><td class="cur">${f(r.r.fp)}</td><td class="bl">${fd(r.b.buy)}</td><td class="cur">${fd(r.r.buy)}</td>${mixC(r)}</tr>`).join('');
   } else if (den) {   // 명 · 금액 + 분모: 지표 묶음(Δ = 증감) · 분모 · 비중 · 분해
     head = `<tr><th></th><th class="grp" colspan="7">${esc(CM.n)}${u}</th><th class="grp bl" colspan="2">${esc(CM.dn)}${ud}</th><th class="grp bl" colspan="4">${esc(CM.rn)}</th><th class="grp bl" colspan="2">비중 변화 분해</th></tr>
-      <tr><th>${esc(DIM_NAME[dim])}</th>${H5}<th>Δ</th><th>Δ 기여</th><th class="bl">베이스라인</th><th class="cur">최근</th><th class="bl">베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>계절요일보정 대비</th>${mixH}</tr>`;
-    totRow = `<tr class="tot"><td>합계</td>${nCells(EN, dec.F1 - dec.F0, '100%')}<td class="bl">${fd(dec.O0)}</td><td class="cur">${fd(dec.O1)}</td>${rCells(ER)}${mixC(dec)}</tr>`;
-    body = rows.map(r => `<tr>${name(r)}${nCells(eN(r.s), r.dfp, share(r.dfp, dec.F1 - dec.F0))}<td class="bl">${fd(r.b.buy)}</td><td class="cur">${fd(r.r.buy)}</td>${rCells(eR(r.s))}${mixC(r)}</tr>`).join('');
+      <tr><th>${esc(DIM_NAME[dim])}</th>${H5}${dH}<th class="bl">베이스라인</th><th class="cur">최근</th><th class="bl">베이스라인</th><th>계절요일보정</th><th class="cur">최근</th><th>계절요일보정 대비</th>${mixH}</tr>`;
+    totRow = `<tr class="tot"><td>합계</td>${nCells(EN, totDx, '100%')}<td class="bl">${fd(dec.O0)}</td><td class="cur">${fd(dec.O1)}</td>${rCells(ER)}${mixC(dec)}</tr>`;
+    body = tRows.map(r => `<tr>${name(r)}${nCells(eN(r.s), r.dx, share(r.dx, sumDx))}<td class="bl">${fd(r.b.buy)}</td><td class="cur">${fd(r.r.buy)}</td>${rCells(eR(r.s))}${mixC(r)}</tr>`).join('');
   } else {            // 분모 없음: 지표 묶음만
-    head = `<tr><th></th><th class="grp" colspan="7">${esc(CM.n)}${u}</th></tr><tr><th>${esc(DIM_NAME[dim])}</th>${H5}<th>Δ</th><th>Δ 기여</th></tr>`;
-    totRow = `<tr class="tot"><td>합계</td>${nCells(EN, dec.F1 - dec.F0, '100%')}</tr>`;
-    body = rows.map(r => `<tr>${name(r)}${nCells(eN(r.s), r.dfp, share(r.dfp, dec.F1 - dec.F0))}</tr>`).join('');
+    head = `<tr><th></th><th class="grp" colspan="7">${esc(CM.n)}${u}</th></tr><tr><th>${esc(DIM_NAME[dim])}</th>${H5}${dH}</tr>`;
+    totRow = `<tr class="tot"><td>합계</td>${nCells(EN, totDx, '100%')}</tr>`;
+    body = tRows.map(r => `<tr>${name(r)}${nCells(eN(r.s), r.dx, share(r.dx, sumDx))}</tr>`).join('');
   }
   $id('dgBr').innerHTML = `<thead>${head}</thead><tbody>${totRow}${body}</tbody>`;
+  // 항목마다 따로 계산한 계절요일보정의 합은 합계의 계절요일보정과 다를 수 있다 — 기여는 항목 Δ 합 기준
+  const gap = !isR && Math.abs(sumDx - totDx) > Math.max(Math.abs(totDx) * 0.05, 1e4);
+  $id('dgBrNote').textContent = isR ? '' : `Δ = 최근 − ${refN}${useEx ? '' : '(비교 연도 데이터가 없어 베이스라인)'} · 기여 = 항목 Δ ÷ 항목 Δ 합(합 100%, 음수 = 전체와 반대 방향)`
+    + (gap ? ` · 항목별 ${refN}은 항목마다 따로 계산해, 항목 Δ 합 ${sumDx > 0 ? '+' : ''}${f(sumDx)}이 합계 Δ ${totDx > 0 ? '+' : ''}${f(totDx)}와 다름(기여는 항목 Δ 합 기준)` : '');
 
   // 월별 비중 — 베이스라인 시작 월부터 최근 월까지
   const valid = rg.valid, col = R.f[dim], vals = R.dims[dim];
