@@ -82,3 +82,25 @@ def test_prompts():
     for p in gm.PROMPTS.values():
         assert p.rstrip().endswith('[근거]') and '앱 이용자 누적' in p
     assert '계절요일보정' in gm.PROMPT_DIAG and "'> '" in gm.PROMPT_DIAG
+
+
+def test_network_errors_become_gemini_error(monkeypatch):
+    """연결 끊김 · 이상한 응답도 GeminiError 로 — app.py 가 화면에 알림을 돌려보낼 수 있게"""
+    import http.client
+
+    def boom(exc):
+        def f(*a, **k):
+            raise exc
+        return f
+    for exc in (ConnectionResetError('reset'), http.client.RemoteDisconnected('x'), TimeoutError()):
+        monkeypatch.setattr(gm, 'urlopen', boom(exc))
+        with pytest.raises(gm.GeminiError):
+            gm.write_memo('x', 'K', model='m1')
+
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'<html>not json</html>'
+    monkeypatch.setattr(gm, 'urlopen', lambda *a, **k: R())
+    with pytest.raises(gm.GeminiError):
+        gm.write_memo('x', 'K', model='m1')

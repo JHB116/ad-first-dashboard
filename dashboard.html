@@ -1175,7 +1175,8 @@ document.addEventListener('keydown', e => {
 // 받은 초안은 편집 중인 메모의 리뷰 칸에 넣는다(칸에 글이 있으면 그 아래에 덧붙임). 저장해야 남는다.
 const gem = () => window.AD_GEMINI || null;
 let GEM_WAIT = '';
-let GEM_KIND = '';   // 기다리는 요청: 'memo' · 'diag'
+let GEM_KIND = '', GEM_T = 0;   // 기다리는 요청: 'memo' · 'diag' · 응답 없음 대비 시간 제한
+const GEM_LIMIT = 120000;   // 서버가 404 → 다른 모델로 다시 부르는 경우까지 넉넉히
 function gemBtn(hd) {   // hd: true = 메모 위쪽, 'diag' = 첫구매 진단 리뷰, 없음 = 메모 편집창
   const g = gem();
   if (!g) return '';
@@ -1276,13 +1277,19 @@ function gemAsk(kind = 'memo') {
   if (!facts) { toast(kind === 'diag' ? '첫구매 진단 화면에서 데이터를 연 뒤 눌러 주세요' : '추이 화면에서 데이터를 연 뒤 눌러 주세요'); return; }
   if (kind === 'memo') memoSyncDraft();
   GEM_WAIT = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; GEM_KIND = kind;
+  const id = GEM_WAIT;
+  clearTimeout(GEM_T);
+  GEM_T = setTimeout(() => {   // 답이 안 오면 버튼을 풀고 알린다
+    if (GEM_WAIT !== id) return;
+    window.AD_GEMINI_RECEIVE({ id, ok: false, message: 'Gemini 응답이 2분 넘게 없습니다 — 새로고침 후 다시 눌러 주세요. 계속되면 Streamlit 앱 Reboot.' });
+  }, GEM_LIMIT);
   g.request({ type: 'gemini_memo', id: GEM_WAIT, kind, facts });
   if (kind === 'diag') { const b = $id('dgnGem'); if (b) { b.disabled = true; b.textContent = 'Gemini 가 쓰는 중…'; } }
   else renderMemos();
 }
 window.AD_GEMINI_RECEIVE = r => {
   if (!r || !r.id || r.id !== GEM_WAIT) return;
-  GEM_WAIT = '';
+  GEM_WAIT = ''; clearTimeout(GEM_T);
   if (GEM_KIND === 'diag') {
     GEM_KIND = '';
     if (r.ok && r.text && S.page === 'diag') {

@@ -69,6 +69,8 @@ if (COMPONENT / 'index.html').exists():
                 resp = {'id': rid, 'ok': True, 'text': text, 'model': used}
             except gm.GeminiError as e:
                 resp = {'id': rid, 'ok': False, 'message': str(e)}
+            except Exception as e:   # 예상 못 한 오류도 화면으로 돌려보낸다(안 그러면 '쓰는 중…'에 멈춤)
+                resp = {'id': rid, 'ok': False, 'message': f'Gemini 초안 중 오류({type(e).__name__}) — 잠시 뒤 다시 눌러 주세요.'}
             st.session_state['memo_last_id'] = rid
             st.session_state['memo_response'] = resp
             st.rerun()

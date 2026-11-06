@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any, Callable, Mapping
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -104,8 +105,10 @@ def _transport(method: str, url: str, headers: dict, payload: dict | None, timeo
         if e.code == 404:
             raise GeminiError('Gemini 모델을 찾지 못했습니다.', 404) from None
         raise GeminiError(f'Gemini 호출 실패(HTTP {e.code}).', e.code) from None
-    except (URLError, TimeoutError):
-        raise GeminiError('Gemini 에 연결하지 못했습니다(네트워크 · 시간 초과).') from None
+    except (URLError, TimeoutError, OSError, HTTPException):   # 연결 끊김 · 시간 초과 · SSL 등
+        raise GeminiError('Gemini 에 연결하지 못했습니다(네트워크 · 시간 초과). 잠시 뒤 다시 눌러 주세요.') from None
+    except ValueError:                                          # 응답이 JSON 이 아님
+        raise GeminiError('Gemini 응답을 읽지 못했습니다.') from None
 
 
 def _version(name: str) -> tuple:
