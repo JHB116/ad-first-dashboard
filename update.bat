@@ -6,7 +6,7 @@ chcp 65001 >nul
 set "HERE=%~dp0"
 set "SRC=https://raw.githubusercontent.com/jhb116/ad-first-dashboard/main"
 set "TMP_DIR=%TEMP%\ad-dashboard-update"
-set FILES=build_data.py make_backup.bat requirements.txt calc.js dashboard.html index.html app.py
+set FILES=build_data.py make_backup.bat requirements.txt calc.js dashboard.html index.html app.py gemini_memo.py
 if exist "%TMP_DIR%" rmdir /s /q "%TMP_DIR%"
 mkdir "%TMP_DIR%"
 

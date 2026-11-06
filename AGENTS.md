@@ -6,6 +6,7 @@
 - **공개 저장소**: 원천(xlsb · csv), `data/`, `backup/`, `.json.gz`, 실제 실적 수치(문서 · 테스트 · 화면 문구 포함)는 커밋하지 않는다. 실수치 검증값은 `tests/local/expected.json`(gitignore).
 - 원천 읽기 · 분류 · 이어 붙이기는 `build_data.build()` 하나로 로컬 CLI와 Streamlit 업로드가 같이 쓴다.
 - `app.py`는 `dashboard.html`의 `<script src="calc.js"></script>` 태그를 찾아 인라인한다. 이 태그를 바꾸면 `app.py`도 고친다.
+- 메모 리뷰 Gemini 초안: 화면(`memoFacts`)이 계산한 숫자만 `streamlit_component/` → `app.py` → `gemini_memo.py` 로 보낸다. 원천 · 백업을 보내지 않는다. 키는 Streamlit Secrets(`GEMINI_API_KEY`)에만.
 - 백업 형식(`format: ad-new-dashboard-backup`, `version: 1`)을 바꾸면 이전 백업 호환을 확인한다.
 
 ## 완료 확인

@@ -1060,7 +1060,7 @@ function renderMemos() {
     + `<span class="hint">광고유형 · 비용출처 필터는 지금 화면 기준</span></div>`
     + `<div class="memo-cols">${MEMO_PANES.map(([p, nm, hint]) => `<div class="memo-col"><div class="memo-cap">${nm}<small>${hint}</small></div>`
       + `<div class="memo-in" data-pane="${p}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${nm}">${memoClean(p === 'a' ? MEMO_DRAFT.html : MEMO_DRAFT.html2)}</div></div>`).join('')}</div>`
-    + `<div class="memo-cs"><span class="hint">Ctrl+Enter 저장 · Esc 취소</span><span class="sp"></span>`
+    + `<div class="memo-cs"><span class="hint">Ctrl+Enter 저장 · Esc 취소</span><span class="sp"></span>${gemBtn()}`
     + `<button class="btn" type="button" data-memocancel>취소</button><button class="btn primary" type="button" data-memosave>저장</button></div></div>`;
   const card = m => (MEMO_EDIT === m.id ? editor(m.id) : `<div class="memo-item${memoMatch(m.view) ? ' now' : ''}" data-c="${color(m.color)}" data-mid="${esc(m.id)}">`
     + (() => {
@@ -1124,6 +1124,7 @@ document.addEventListener('click', e => {
   if (col) { memoSyncDraft(); MEMO_DRAFT.color = col.dataset.memocolor; renderMemos(); return; }
   if (e.target.closest('[data-memocancel]')) { MEMO_EDIT = null; renderMemos(); return; }
   if (e.target.closest('[data-memosave]')) { memoSave(); return; }
+  if (e.target.closest('[data-memogem]')) { gemAsk(); return; }
   const m = MEMOS.all().find(x => x.id === id);
   if (!m) return;
   if (e.target.closest('[data-memogo]')) { memoGo(m.view); return; }
@@ -1164,6 +1165,88 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); memoSave(); }
   else if (e.key === 'Escape') { MEMO_EDIT = null; renderMemos(); }
 });
+
+// 메모 '리뷰' Gemini 초안 — Streamlit(app.py)에서 열었을 때만. 지금 화면(추이)의 숫자만 보내고, 키는 서버에만 있다.
+// 받은 초안은 편집 중인 메모의 리뷰 칸에 넣는다(칸에 글이 있으면 그 아래에 덧붙임). 저장해야 남는다.
+const gem = () => window.AD_GEMINI || null;
+let GEM_WAIT = '';
+function gemBtn() {
+  const g = gem();
+  if (!g) return '';
+  const tip = g.ready ? '지금 화면(실적 요약 · 광고유형별 · 흐름)의 숫자만 Gemini 에 보내 리뷰 초안을 받아 리뷰 칸에 넣습니다. 원천 데이터는 보내지 않습니다. 확인 · 수정 후 저장하세요.'
+    : 'Streamlit Cloud → 앱 Settings → Secrets 에 GEMINI_API_KEY 를 넣으면 쓸 수 있습니다.';
+  return `<button class="btn" type="button" data-memogem${g.ready && !GEM_WAIT ? '' : ' disabled'} title="${esc(tip)}">${GEM_WAIT ? 'Gemini 가 쓰는 중…' : '✨ Gemini 리뷰 초안'}</button>`;
+}
+// 근거(facts) — 화면과 같은 산식 · 표기(C.fmt · fmtD). 기간 · 비교 · 일평균/누계 · 유형 · 필터를 함께 적는다
+function memoFacts() {
+  if (!R || S.page !== 'trend') return '';
+  const TS = typeSeries(), types = selTypes(), Y = yearSlots(), at = Y.at, X = cmpCtx(at);
+  const tt = S.view === 'split' ? C.TOTAL : S.trType, T = TS[tt] || TS[C.TOTAL], filt = filterSummary();
+  const modeN = S.mode === 'avg' ? '일평균' : '누계', grainN = GRAIN_N[S.grain];
+  const vf = (m, v) => v == null ? '–' : C.fmt(m.kind, v, m.kind === 'ratio' && Math.abs(v) < 0.01 ? { dp: 2 } : {}) + (m.kind === 'ratio' ? '' : C.unit(m.kind, S.mode));
+  const val = (m, ser, idx) => (ser && idx && idx.length ? periodVal(m, ser, idx) : null);
+  const who = (tt === C.TOTAL ? (types.length === C.TYPES.length ? '전체 유형 합계' : `선택 유형 합계(${types.join('·')})`) : tt) + (filt ? ' · ' + filt : '');
+  const L = [`[보기] ${grainN} · ${X.custom ? '실적기간 ' : ''}${X.curTip}${!X.custom && at.partial ? ' (진행 중 — 비교도 같은 일자까지)' : ''} · ${modeN} · ${who} · 비교 ${X.label}: ${X.prevTip}`,
+    '[정의] 첫구매객수 · 첫구매거래액 = 총결제 기준(첫구매) · 가입률 · 첫구매전환율은 비회원UV 기준 · CPA · 객단가 단위 만원 · 증감 + 증가 / △ 감소'];
+  L.push(`[실적 요약 — ${who}, 괄호는 ${X.name} 값 · ${X.label}]`);
+  for (const m of C.METRICS) {
+    const v = val(m, T, X.cur), c = val(m, T, X.prev);
+    if (v == null && c == null) continue;
+    L.push(`• ${m.n}${m.d ? `(${m.d})` : ''} ${vf(m, v)} (${X.name} ${vf(m, c)} · ${fmtD(v, c).t})`);
+  }
+  const KEY = ['cost', 'join', 'jcpa', 'fp', 'fpr', 'fcpa', 'fpv', 'nrev', 'roas'].map(k => C.METRIC[k]);
+  if (!X.custom) {   // 3개 연도 같은 구간
+    const sl = Y.slots[Y.focus], [y2, y1, y0] = Y.keys;
+    if (sl) {
+      L.push(`[연도별 같은 구간 — ${sl.label}${sl.sub ? ' ' + sl.sub : ''} · ${Y.names[y0]} vs 앞의 해 (데이터가 있는 해만)]`);
+      for (const m of KEY) {
+        const a = val(m, T, sl.idx[y0]), b = val(m, T, sl.idx[y1]), c = val(m, T, sl.idx[y2]);
+        if (a == null) continue;
+        L.push(`• ${m.n} ${vf(m, a)}` + (b != null ? ` · ${Y.names[y1]} ${vf(m, b)}(전년비 ${fmtD(a, b).t})` : '') + (c != null ? ` · ${Y.names[y2]} ${vf(m, c)}(전전년비 ${fmtD(a, c).t})` : ''));
+      }
+    }
+  }
+  if (types.length > 1) {
+    L.push(`[광고유형별 — 괄호는 ${X.label}]`);
+    for (const t of types) {
+      const ser = TS[t], seg = KEY.filter(m => m.k !== 'roas' && m.k !== 'fpv').map(m => { const v = val(m, ser, X.cur); return v == null ? null : `${m.n} ${vf(m, v)}(${fmtD(v, val(m, ser, X.prev)).t})`; }).filter(Boolean);
+      if (seg.length) L.push(`• ${t}: ${seg.join(', ')}`);
+    }
+  }
+  if (!X.custom) {   // 흐름 — 기준 연도의 최근 구간들과 전년비
+    const y0 = Y.keys[2], y1 = Y.keys[1], sl = Y.slots.slice(0, Y.focus + 1).slice(-6);
+    if (sl.length > 1) {
+      L.push(`[${grainN} 흐름 — ${who}, 최근 ${sl.length}개, 괄호는 전년비]`);
+      for (const q of sl) L.push(`• ${q.label}${q.sub ? ' ' + q.sub : ''}: ` + ['join', 'fp', 'fpr', 'nrev', 'cost'].map(k => C.METRIC[k])
+        .map(m => { const a = val(m, T, q.idx[y0]); return `${m.n} ${vf(m, a)}(${fmtD(a, val(m, T, q.idx[y1])).t})`; }).join(', '));
+    }
+  }
+  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · ') + ' (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)');
+  return L.join('\n');
+}
+function gemAsk() {
+  const g = gem();
+  if (!g || !g.ready || GEM_WAIT) return;
+  const facts = memoFacts();
+  if (!facts) { toast('추이 화면에서 데이터를 연 뒤 눌러 주세요'); return; }
+  memoSyncDraft();
+  GEM_WAIT = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  g.request({ type: 'gemini_memo', id: GEM_WAIT, facts });
+  renderMemos();
+}
+window.AD_GEMINI_RECEIVE = r => {
+  if (!r || !r.id || r.id !== GEM_WAIT) return;
+  GEM_WAIT = '';
+  if (!MEMO_EDIT) return;   // 그사이 편집을 닫음
+  memoSyncDraft();
+  if (r.ok && r.text) {
+    const html = String(r.text).replace(/\r/g, '').split('\n').map(l => `<div>${l.trim() ? esc(l) : '<br>'}</div>`).join('');
+    MEMO_DRAFT.html = memoHas(MEMO_DRAFT.html) ? `${MEMO_DRAFT.html}<div><br></div>${html}` : html;
+    MEMO_PANE = 'a';
+    toast('Gemini 초안을 리뷰 칸에 넣었습니다 — 숫자를 확인 · 수정한 뒤 저장하세요');
+  } else toast(r.message || 'Gemini 초안을 받지 못했습니다');
+  if ($id('memoSec')) renderMemos();
+};
 
 const MET_NAME = { cost: '광고비', uv: 'UV', uvn: '비회원UV', join: '가입', fp: '첫구매', fpr: '첫구매거래액', fpn: '첫구매(순결제)', nb: '신규고객수', nrev: '신규거래액', nrv: '순결제거래액', buy: '구매고객', rev: '거래액', wb: '윈백 구매고객' };
 // 원천에 컬럼이 없어 '데이터 없음'으로 둔 지표 · 기간

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>광고 신규 실적 대시보드</title>
+<style>html,body,#dashboard{width:100%;height:100%;margin:0;overflow:hidden;border:0;background:#fff}</style>
+</head>
+<body>
+<iframe id="dashboard" title="광고 신규 실적 대시보드"></iframe>
+<script>
+// Streamlit ↔ 대시보드 중계 — 대시보드(안쪽 iframe)가 메모 리뷰 초안을 요청하면 Streamlit(서버)이 Gemini 로 쓰고 답을 돌려준다.
+// 키는 서버에만 있고, 여기에는 연결 여부와 답만 오간다.
+(() => {
+  'use strict';
+  const child = document.getElementById('dashboard');
+  let loaded = false, lastStamp = '', lastResp = '', args = {};
+  const send = (type, data = {}) => window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, '*');
+  const setHeight = () => send('streamlit:setFrameHeight', { height: Math.max(900, window.innerHeight || 0) });
+  function bridge() {
+    if (!loaded || !child.contentWindow) return;
+    const w = child.contentWindow, st = args.gemini || {};
+    w.AD_GEMINI = { ready: !!st.configured, model: st.model || '', request: req => send('streamlit:setComponentValue', { value: req }) };
+    const r = args.memoResponse;
+    if (r && r.id && r.id !== lastResp && typeof w.AD_GEMINI_RECEIVE === 'function') { lastResp = r.id; w.AD_GEMINI_RECEIVE(r); }
+    if (typeof w.AD_GEMINI_STATUS === 'function') w.AD_GEMINI_STATUS(st);
+  }
+  child.addEventListener('load', () => { loaded = true; bridge(); setHeight(); });
+  window.addEventListener('message', e => {
+    const m = e.data || {};
+    if (m.type !== 'streamlit:render') return;
+    args = m.args || {};
+    const stamp = String(args.pageStamp || '');
+    if (!loaded || stamp !== lastStamp) { loaded = false; lastStamp = stamp; child.srcdoc = String(args.html || ''); }
+    else bridge();
+    setHeight();
+  });
+  window.addEventListener('resize', setHeight);
+  send('streamlit:componentReady', { apiVersion: 1 });
+  setHeight();
+})();
+</script>
+</body>
+</html>
