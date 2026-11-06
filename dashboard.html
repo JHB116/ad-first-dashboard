@@ -1250,7 +1250,7 @@ function fprSplitRows(rows) {
   fs.forEach(f => { f.c = ok && Math.abs(lnS) > 1e-9 ? p * Math.log(f.cur / f.prev) / lnS : null; });
   const dir = p == null ? 0 : Math.sign(p);
   const main = fs.filter(f => f.c != null).sort((x, y) => dir * (y.c - x.c) || Math.abs(y.c) - Math.abs(x.c))[0] || null;   // 전체와 같은 방향으로 가장 크게 움직인 요인
-  return { cur: a, prev: b, d: a != null && b != null ? a - b : null, p, fs, main, filled: !!rows.fpr.filled };
+  return { cur: a, prev: b, base: rows.fpr.base, d: a != null && b != null ? a - b : null, p, fs, main, filled: !!rows.fpr.filled };
 }
 // 추이(메모): sums(비교) · sums(실적) · 일수
 function fprSplit(sp, sc, dp, dc) {
@@ -1285,7 +1285,9 @@ function fprReport(t, sp, T, ref, opt = {}) {
   const tl = C.children(t, '', 0).map(n => ({ n, x: sp(n) })).filter(o => o.x.d != null && Math.abs(o.x.d) >= 5e3);
   if (tl.length < 2) return L;
   const down = tl.filter(o => o.x.d < 0).sort((a, b) => a.x.d - b.x.d), up = tl.filter(o => o.x.d > 0).sort((a, b) => b.x.d - a.x.d);
-  const line = ({ n, x }) => `• ${n.v}: 첫구매거래액 ${mDelta(x.d)} (${spct(x.p)} · 몫 ${fprShare(x, T)})${fprMainTxt(x) ? ' · ' + fprMainTxt(x) : ''}`;
+  // 진단: 베이스라인 → 계절요일보정 → 최근 (베이스라인보다 늘었는데 기대 상승폭에 못 미친 것인지 구분용)
+  const path = x => (x.base === undefined ? '' : ` · 베이스라인 ${mAmt(x.base)} → ${ref.name} ${mAmt(x.prev)}${x.filled ? '*' : ''} → 최근 ${mAmt(x.cur)} (베이스라인 대비 ${spct(C.pct(x.cur, x.base))})`);
+  const line = ({ n, x }) => `• ${n.v}: 첫구매거래액 ${mDelta(x.d)} (${spct(x.p)} · 몫 ${fprShare(x, T)})${path(x)}${fprMainTxt(x) ? ' · ' + fprMainTxt(x) : ''}`;
   L.push(`[2) 광고유형별 — 첫구매거래액 증감(${mUnit()}, ${ref.label}). 몫 = 전체 증감 ${mDelta(T.d)} 중 비율(반대 방향은 음수)]`);
   L.push('1) 감소'); L.push(...(down.length ? down.map(line) : ['• 없음']));
   L.push('2) 증가'); L.push(...(up.length ? up.map(line) : ['• 없음']));
@@ -1300,7 +1302,7 @@ function fprReport(t, sp, T, ref, opt = {}) {
     const oppK = ks.filter(o => Math.sign(o.y.d) === -dir).sort((a, b) => dir * (a.y.d - b.y.d)).slice(0, 1);
     L.push(`[상세 — ${n.v} (${mDelta(x.d)}, 몫 ${fprShare(x, T)}) · ${leaf === 2 ? '캠페인' : '매체'}별 — ${dir < 0 ? '감소' : '증가'} 큰 순, 마지막은 반대 방향]`);
     const nm = m => (leaf === 2 ? `${m.v}(${R.dims.md[+m.key.split('|')[1]]})` : m.v);
-    for (const o of [...sameK, ...oppK]) L.push(`  ㄴ ${nm(o.m)}: ${mDelta(o.y.d)} (${spct(o.y.p)} · 유형 안 몫 ${x.d ? (o.y.d / x.d * 100).toFixed(0) : '–'}%)${fprMainTxt(o.y) ? ' · ' + fprMainTxt(o.y) : ''}${flowTxt(o.m)}`);
+    for (const o of [...sameK, ...oppK]) L.push(`  ㄴ ${nm(o.m)}: ${mDelta(o.y.d)} (${spct(o.y.p)} · 유형 안 몫 ${x.d ? (o.y.d / x.d * 100).toFixed(0) : '–'}%)${path(o.y)}${fprMainTxt(o.y) ? ' · ' + fprMainTxt(o.y) : ''}${flowTxt(o.m)}`);
     if (!ks.length) L.push('  ㄴ 캠페인 단위 변화 없음');
   }
   return L;
@@ -1332,7 +1334,7 @@ function fprDiagFacts(rg) {
     const P = pk == null ? totRows : rowsFor(t.nodes.get(pk));
     const r = rowsOf(n, P); parent.set(n.key, r); return r;
   };
-  const conv = rows => fprSplitRows(Object.fromEntries(keys.map(k => { const r = rows[k]; return [k, { cur: r.recent, ref: useEx ? r.ex : r.base, filled: !!r.filled }]; })));
+  const conv = rows => fprSplitRows(Object.fromEntries(keys.map(k => { const r = rows[k]; return [k, { cur: r.recent, ref: useEx ? r.ex : r.base, base: useEx ? r.base : undefined, filled: !!r.filled }]; })));
   const ref = useEx ? { name: exName(totRows.fpr), label: `${exName(totRows.fpr)} 대비` } : { name: '베이스라인', label: '베이스라인 대비' };
   FPR_MODE = 'avg';
   try { return fprReport(t, n => conv(rowsFor(n)), conv(totRows), ref); } finally { FPR_MODE = null; }
