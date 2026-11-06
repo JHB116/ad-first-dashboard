@@ -336,10 +336,13 @@
     const O0 = items.reduce((a, x) => a + x.b.buy, 0), O1 = items.reduce((a, x) => a + x.r.buy, 0);
     const F0 = items.reduce((a, x) => a + x.b.fp, 0), F1 = items.reduce((a, x) => a + x.r.fp, 0);
     let mix = 0, within = 0;
+    // 항목 몫 c = 분자 ÷ 전체 분모 의 변화(F1/O1 − F0/O0) — 합 = R1 − R0 (분모가 0 인데 분자가 있는 항목도 빠짐없이)
+    // 구성 효과 = (분모 비중 변화) × 출발 비율, 내부 효과 = c − 구성 효과
     const rows = items.map(x => {
       const w0 = O0 ? x.b.buy / O0 : 0, w1 = O1 ? x.r.buy / O1 : 0;
-      const r0 = x.b.buy ? x.b.fp / x.b.buy : 0, r1 = x.r.buy ? x.r.fp / x.r.buy : r0;
-      const m = (w1 - w0) * r0, wi = w1 * (r1 - r0);
+      const r0 = x.b.buy ? x.b.fp / x.b.buy : 0;
+      const c = (O1 ? x.r.fp / O1 : 0) - (O0 ? x.b.fp / O0 : 0);
+      const m = (w1 - w0) * r0, wi = c - m;
       mix += m; within += wi;
       return { ...x, w0, w1, r0: x.b.buy ? r0 : null, r1: x.r.buy ? x.r.fp / x.r.buy : null, mix: m, within: wi, dfp: x.r.fp - x.b.fp };
     });

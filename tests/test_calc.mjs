@@ -118,6 +118,11 @@ test('구성 효과 분해: 구성 + 내부 = 비중 변화 (브랜드/기획전
   const dec = C.mixDecompose(items);
   near(dec.mix + dec.within, dec.R1 - dec.R0, 1e-9);
   near(dec.F0, items.reduce((a, x) => a + x.b.fp, 0), 1e-9);
+  // 분모가 0 인데 분자가 있는 항목(예: 광고비는 있는데 첫구매 0)이 있어도 항목 몫 합 = 전체 변화
+  const odd = [...items, { name: '분모0', b: { buy: 0, fp: 5 }, r: { buy: 3, fp: 1 } }, { name: '최근분모0', b: { buy: 2, fp: 1 }, r: { buy: 0, fp: 4 } }];
+  const d2 = C.mixDecompose(odd);
+  near(d2.mix + d2.within, d2.R1 - d2.R0, 1e-9);
+  near(d2.rows.reduce((a, r) => a + r.mix + r.within, 0), d2.R1 - d2.R0, 1e-9);
 });
 
 test('드릴다운 트리: 하위 합 = 상위 (브랜드/기획전 · 디바이스 포함)', () => {
