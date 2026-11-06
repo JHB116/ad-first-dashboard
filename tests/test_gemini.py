@@ -74,3 +74,11 @@ def test_custom_prompt():
     assert seen['text'] == '지시문\n근거숫자'
     gm.write_memo('근거숫자', 'K', model='m1', transport=fake)       # 기본 = 이 대시보드 리뷰 지시문
     assert seen['text'].startswith(gm.PROMPT) and '앱 이용자 누적' in gm.PROMPT
+
+
+def test_prompts():
+    """메모(추이) · 첫구매 진단 리뷰 지시문 — app.py 가 요청 kind 로 고른다"""
+    assert gm.PROMPTS['memo'] is gm.PROMPT and gm.PROMPTS['diag'] is gm.PROMPT_DIAG
+    for p in gm.PROMPTS.values():
+        assert p.rstrip().endswith('[근거]') and '앱 이용자 누적' in p
+    assert '계절요일보정' in gm.PROMPT_DIAG and "'> '" in gm.PROMPT_DIAG

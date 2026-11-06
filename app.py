@@ -61,8 +61,10 @@ if (COMPONENT / 'index.html').exists():
         if rid != st.session_state.get('memo_last_id'):
             try:
                 # 설정한 모델이 없으면(404) 쓸 수 있는 모델로 바꿔 부르고, 그 모델을 이 세션 동안 기억한다
+                # kind: 'memo' = 추이 메모 리뷰 칸 · 'diag' = 첫구매 진단 리뷰
                 text, used = gm.write_memo(request.get('facts', ''), api_key,
-                                           model=st.session_state.get('gemini_model', model))
+                                           model=st.session_state.get('gemini_model', model),
+                                           prompt=gm.PROMPTS.get(request.get('kind'), gm.PROMPT))
                 st.session_state['gemini_model'] = used
                 resp = {'id': rid, 'ok': True, 'text': text, 'model': used}
             except gm.GeminiError as e:

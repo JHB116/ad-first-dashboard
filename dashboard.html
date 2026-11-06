@@ -93,7 +93,7 @@ select{cursor:pointer;max-width:260px}
 /* 요약 타일 */
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 @media (min-width:1000px){.tiles{grid-template-columns:repeat(var(--tc,5),minmax(0,1fr))}}
-@media (min-width:1200px){.tiles.t8{--tc:8}}   /* 추이 · 첫구매 진단 카드 17개 = 8 + 8 + 1 */
+@media (min-width:1200px){.tiles.t8{--tc:8}}   /* 추이 · 첫구매 진단 카드 16개 = 8 + 8 */
 @media (min-width:1000px) and (max-width:1439px){.tiles.t8w{--tc:5}}   /* 첫구매 진단 카드는 줄 이름이 길어 넓은 화면에서만 8열 */
 .tile.hl{background:var(--wash)}
 .tiles.t8w .tile{padding-inline:12px}
@@ -1175,12 +1175,49 @@ document.addEventListener('keydown', e => {
 // 받은 초안은 편집 중인 메모의 리뷰 칸에 넣는다(칸에 글이 있으면 그 아래에 덧붙임). 저장해야 남는다.
 const gem = () => window.AD_GEMINI || null;
 let GEM_WAIT = '';
-function gemBtn(hd) {
+let GEM_KIND = '';   // 기다리는 요청: 'memo' · 'diag'
+function gemBtn(hd) {   // hd: true = 메모 위쪽, 'diag' = 첫구매 진단 리뷰, 없음 = 메모 편집창
   const g = gem();
   if (!g) return '';
-  const tip = g.ready ? '지금 화면(실적 요약 · 광고유형별 · 흐름)의 숫자만 Gemini 에 보내 리뷰 초안을 받아 리뷰 칸에 넣습니다. 원천 데이터는 보내지 않습니다. 확인 · 수정 후 저장하세요.'
-    : 'Streamlit Cloud → 앱 Settings → Secrets 에 GEMINI_API_KEY 를 넣으면 쓸 수 있습니다.';
-  return `<button class="btn" type="button" ${hd ? 'data-memogemhd' : 'data-memogem'}${g.ready && !GEM_WAIT ? '' : ' disabled'} title="${esc(hd ? tip + ' (편집 중이 아니면 새 메모를 열어 넣습니다)' : tip)}">${GEM_WAIT ? 'Gemini 가 쓰는 중…' : '✨ Gemini 리뷰 초안'}</button>`;
+  const diag = hd === 'diag';
+  const tip = !g.ready ? 'Streamlit Cloud → 앱 Settings → Secrets 에 GEMINI_API_KEY 를 넣으면 쓸 수 있습니다.'
+    : diag ? '지금 진단의 숫자(카드 16개의 베이스라인 · 계절요일보정 대비, 자동 리뷰의 요인 분해 · 매체별 증감)만 Gemini 에 보내 리뷰 초안을 받아 편집 칸에 넣습니다. 원천 데이터는 보내지 않습니다. 확인 · 수정 후 저장하세요.'
+    : '지금 화면(실적 요약 · 광고유형별 · 흐름)의 숫자만 Gemini 에 보내 리뷰 초안을 받아 리뷰 칸에 넣습니다. 원천 데이터는 보내지 않습니다. 확인 · 수정 후 저장하세요.' + (hd ? ' (편집 중이 아니면 새 메모를 열어 넣습니다)' : '');
+  const attr = diag ? 'id="dgnGem"' : hd ? 'data-memogemhd' : 'data-memogem';
+  const busy = GEM_WAIT && GEM_KIND === (diag ? 'diag' : 'memo');
+  return `<button class="btn" type="button" ${attr}${g.ready && !GEM_WAIT ? '' : ' disabled'} title="${esc(tip)}">${busy ? 'Gemini 가 쓰는 중…' : diag ? '✨ Gemini 초안' : '✨ Gemini 리뷰 초안'}</button>`;
+}
+// 첫구매 진단 리뷰 근거 — 화면의 카드 값과 자동 리뷰(요인 분해 · 매체별)를 글자로
+function diagFacts() {
+  if (!R || S.page !== 'diag' || !DGN_CTX) return '';
+  const { bl, F, DT, rg, auto } = DGN_CTX, rows = bl.rows, filt = filterSummary() || '광고 전체';
+  const hasRef = rg.refBase.length > 0 && rg.refRecent.length > 0;
+  const vf = (M, v) => v == null ? '–' : dgFmt(M.kind, v) + (M.kind === 'ratio' ? '' : dgUnit(M.kind));
+  const L = [`[보기] 첫구매 진단 · ${filt} · 일평균(비율은 합계 ÷ 합계)`,
+    `[구간] 베이스라인 ${ymd(DT.b0)}~${ymd(DT.b1)} ${compo(rg.base)} → 최근 ${ymd(DT.r0)}~${ymd(rg.r1)} ${compo(rg.recent)}`,
+    hasRef ? `[계절 비교] ${F.refY}년 ${ymd(rg.refLbl[0])}~${ymd(rg.refLbl[1])} → ${ymd(rg.refLbl[2])}~${ymd(rg.refLbl[3])} — 계절요일보정 = 올해 베이스라인을 최근 구간 요일 구성에 맞춘 값 × ${F.refY}년 같은 구간 증감 배수`
+      : `[계절 비교] ${F.refY}년 같은 구간 데이터가 없어 계절요일보정 없음 — 베이스라인 대비만 있음`,
+    '[정의] 첫구매객수 · 첫구매거래액 = 총결제 기준(첫구매) · 첫구매전환율 = 첫구매객수 ÷ 비회원UV · 증감 + 증가 / - 감소',
+    '[카드 — 최근 일평균 · 베이스라인 대비 · 계절요일보정 대비]'];
+  for (const k of [...DG_METS, 'fps']) {
+    const M = C.METRIC[k], r = rows[k];
+    if (!r || r.recent == null) continue;
+    L.push(`• ${M.n}${M.d ? `(${M.d})` : ''} ${vf(M, r.recent)} · 베이스라인 ${vf(M, r.base)} (${sgn(r.chg)})` + (r.ex != null ? ` · ${exName(r)} ${vf(M, r.ex)} (${sgn(r.vsEx)})` : ''));
+  }
+  const box = document.createElement('div'); box.innerHTML = auto;
+  L.push('[자동 리뷰 — 계절요일보정 대비 요인 분해 · 매체별 증감(최근 − 계절요일보정, 일평균 백만원)]');
+  for (const el of box.children) { const t = (el.textContent || '').replace(/\s+/g, ' ').trim(); if (t) L.push(t); }
+  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · ') + ' (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)');
+  return L.join('\n');
+}
+// Gemini 글 → 진단 리뷰 줄 모양(□ 제목 · ㄴ 하위 · > 결론)
+function gemDiagHTML(text) {
+  return String(text).replace(/\r/g, '').split('\n').map(l => {
+    const t = l.trim();
+    if (!t) return '<div><br></div>';
+    const cls = t.startsWith('□') ? 'h' : t.startsWith('ㄴ') ? 'l2' : (t.startsWith('>') || t.startsWith('→')) ? 'l3' : '';
+    return `<div${cls ? ` class="${cls}"` : ''}>${esc(t)}</div>`;
+  }).join('');
 }
 // 메모 위쪽(+ 메모 옆) 버튼 — Streamlit 연결 상태가 늦게 와도 이 자리만 다시 그린다
 function gemHeader() { const el = $id('memoGemHd'); if (el) el.innerHTML = gemBtn(true); }
@@ -1232,19 +1269,31 @@ function memoFacts() {
   if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · ') + ' (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)');
   return L.join('\n');
 }
-function gemAsk() {
+function gemAsk(kind = 'memo') {
   const g = gem();
   if (!g || !g.ready || GEM_WAIT) return;
-  const facts = memoFacts();
-  if (!facts) { toast('추이 화면에서 데이터를 연 뒤 눌러 주세요'); return; }
-  memoSyncDraft();
-  GEM_WAIT = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  g.request({ type: 'gemini_memo', id: GEM_WAIT, facts });
-  renderMemos();
+  const facts = kind === 'diag' ? diagFacts() : memoFacts();
+  if (!facts) { toast(kind === 'diag' ? '첫구매 진단 화면에서 데이터를 연 뒤 눌러 주세요' : '추이 화면에서 데이터를 연 뒤 눌러 주세요'); return; }
+  if (kind === 'memo') memoSyncDraft();
+  GEM_WAIT = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; GEM_KIND = kind;
+  g.request({ type: 'gemini_memo', id: GEM_WAIT, kind, facts });
+  if (kind === 'diag') { const b = $id('dgnGem'); if (b) { b.disabled = true; b.textContent = 'Gemini 가 쓰는 중…'; } }
+  else renderMemos();
 }
 window.AD_GEMINI_RECEIVE = r => {
   if (!r || !r.id || r.id !== GEM_WAIT) return;
   GEM_WAIT = '';
+  if (GEM_KIND === 'diag') {
+    GEM_KIND = '';
+    if (r.ok && r.text && S.page === 'diag') {
+      if (DGN_EDIT) { const el = $id('dgnBody'); if (el && memoPlain(el)) DGN_AI = `${el.innerHTML}<div><br></div>${gemDiagHTML(r.text)}`; else DGN_AI = gemDiagHTML(r.text); }
+      else DGN_AI = gemDiagHTML(r.text);
+      DGN_EDIT = true; render(true);
+      toast('Gemini 초안을 리뷰 편집 칸에 넣었습니다 — 숫자를 확인 · 수정한 뒤 저장하세요');
+    } else { if (!r.ok) toast(r.message || 'Gemini 초안을 받지 못했습니다'); if (S.page === 'diag') render(true); }
+    return;
+  }
+  GEM_KIND = '';
   if (!MEMO_EDIT) { gemHeader(); return; }   // 그사이 편집을 닫음
   memoSyncDraft();
   if (r.ok && r.text) {
@@ -1429,7 +1478,7 @@ const HL_METS = new Set(['fpr', 'nrev']);   // 카드에서 연한 파랑으로 
 // 드릴다운 표 열로 고르는 지표 — 기본 첫구매거래액 · 신규거래액
 const DG_DEF = ['fpr', 'nrev'];
 function dgMets() { const m = new Set(S.diag.mets || []); const out = DG_METS.filter(k => m.has(k)); return out.length ? out : DG_DEF.slice(); }
-// 구성 효과 분해 기준 지표 — 카드 17개 전부
+// 구성 효과 분해 기준 지표 — 카드 16개 전부
 //  sum   : 명 · 금액 지표. 항목별 증감 폭포, 분모(den)가 있으면 비중(num ÷ den)을 구성 · 내부 효과로 나눈다
 //  ratio : 비율 · CPA 지표. 그 비율(num ÷ den) 자체를 나누고, 폭포는 항목별 비율 변화 기여(구성 + 내부)
 const COMP_DEN = { join: ['uvn', '가입률'], fp: ['buy', '첫구매 비중'], fpr: ['rev', '첫구매거래액 비중'], nb: ['buy', '신규고객 비중'], nrev: ['nrv', '신규거래액 비중'], uvn: ['uv', '비회원UV 비중'] };
@@ -1590,16 +1639,19 @@ const DGN = {
   },
 };
 function dgnKey(DT) { return [DT.b0, DT.b1, DT.r0, S.diag.refY, JSON.stringify(S.types || null), JSON.stringify(S.srcs || null)].join('|'); }
+let DGN_CTX = null, DGN_AI = '';   // Gemini 근거용 지금 진단 · 받은 초안(편집 칸에 넣고 저장해야 남음)
 function diagNote(bl, F, mv, DT, rg) {
   const key = dgnKey(DT), saved = DGN.get(key), auto = diagCard(bl, F, mv);
+  DGN_CTX = { bl, F, DT, rg, auto };
   const showSaved = saved && !DGN_AUTO && !DGN_EDIT;
-  const body = DGN_EDIT ? dgnClean(saved && !DGN_AUTO ? saved.html : auto) : showSaved ? dgnClean(saved.html) : auto;
+  if (!DGN_EDIT) DGN_AI = '';
+  const body = DGN_EDIT ? dgnClean(DGN_AI || (saved && !DGN_AUTO ? saved.html : auto)) : showSaved ? dgnClean(saved.html) : auto;
   const when = saved ? `${saved.updated ? saved.updated.slice(0, 10).replace(/-/g, '.') : ''} 편집${saved.r1 && saved.r1 !== rg.r1 ? ` · ${ymd(saved.r1)}까지 데이터 기준 — 지금 숫자와 다를 수 있음` : ''}` : '';
   const tools = DGN_EDIT
-    ? '<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>'
-    : `<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 리뷰 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
+    ? `${gemBtn('diag')}<button class="btn primary" type="button" id="dgnSave">저장</button><button class="lnk" type="button" id="dgnCancel">취소</button>`
+    : `${gemBtn('diag')}<button class="lnk" type="button" id="dgnEdit">${saved && !DGN_AUTO ? '고치기' : '편집'}</button>${saved ? `<button class="lnk" type="button" id="dgnToggle">${DGN_AUTO ? '편집본 보기' : '자동 리뷰 보기'}</button><button class="lnk" type="button" id="dgnReset">편집본 지우기</button>` : ''}`;
   return `<div class="card pad judge dgn" style="margin-top:12px">
-    <div class="dgn-bar"><b>리뷰</b><span class="hint">${DGN_EDIT ? '편집 중 — 줄을 고르고 □ 제목 · ㄴ 하위 · > 결론으로 모양을 바꾸거나, 글자를 골라 굵게 · 색 · 형광' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 리뷰 (편집본 있음 · ${esc(when)})` : ''}</span><span class="dgn-tools">${tools}</span></div>
+    <div class="dgn-bar"><b>리뷰</b><span class="hint">${DGN_EDIT && DGN_AI ? 'Gemini 초안 — 숫자를 확인 · 수정한 뒤 저장해야 남습니다(취소하면 이전 리뷰 그대로)' : DGN_EDIT ? '편집 중 — 줄을 고르고 □ 제목 · ㄴ 하위 · > 결론으로 모양을 바꾸거나, 글자를 골라 굵게 · 색 · 형광' : showSaved ? `직접 편집함 · ${esc(when)}` : saved ? `자동 리뷰 (편집본 있음 · ${esc(when)})` : ''}</span><span class="dgn-tools">${tools}</span></div>
     ${DGN_EDIT ? dgnToolbar() : ''}
     <div id="dgnBody" class="dgn-body${DGN_EDIT ? ' editing' : ''}"${DGN_EDIT ? ' contenteditable="true" role="textbox" aria-multiline="true" aria-label="리뷰 편집"' : ''}>${body}</div>
     <div class="hint" style="margin-top:4px">% = 최근 일평균의 계절요일보정 대비. 매체별 숫자 = 그 매체의 최근 − 그 매체의 계절요일보정(일평균, 백만원), 감소 · 증가 큰 순 3개. 계절요일보정 = 올해 베이스라인을 최근 구간의 요일 구성(평일 / 주말·휴일)에 맞춘 값 × ${esc(F.refY)}년 같은 날짜 구간의 증감 배수(${esc(F.refY)}년 최근 ÷ ${esc(F.refY)}년 베이스라인, 이쪽도 요일 구성을 맞춰 계산). 요인끼리 곱하면 왼쪽 값이 된다</div>`;
@@ -1750,7 +1802,7 @@ function renderDiag(main) {
     <div class="card tbl-wrap"><table class="grid" id="dgBrMon"></table></div></section>
     <section><div class="card pad"><ul class="notes">
       <li>구매고객 = 총결제고객수 · 첫구매객수 = 총결제고객수(첫구매) · 첫구매 비중 = 첫구매 ÷ 구매고객 · 첫구매전환율 = 첫구매객수 ÷ 비회원UV · 가입첫구매전환율 = 첫구매객수 ÷ 가입자수 · 첫구매 객단가 = 첫구매거래액 ÷ 첫구매객수 · 신규 객단가 = 신규거래액 ÷ 신규고객수</li>
-      <li>구성 효과 분해 기준 지표: 카드 17개 전부. 비율 · CPA 는 그 비율 자체를 나눈다(폭포 = 항목별 비율 변화 기여). 명 · 금액은 항목별 증감 + 비중 분해 — 가입 ÷ 비회원UV · 첫구매객수 ÷ 구매고객수 · 첫구매거래액 ÷ 총결제거래액 · 신규고객수 ÷ 구매고객수 · 신규거래액 ÷ 순결제거래액 · 비회원UV ÷ UV. 광고비 · UV · 순결제거래액 · 구매고객수는 분모가 없어 증감만</li>
+      <li>구성 효과 분해 기준 지표: 카드 16개 전부. 비율 · CPA 는 그 비율 자체를 나눈다(폭포 = 항목별 비율 변화 기여). 명 · 금액은 항목별 증감 + 비중 분해 — 가입 ÷ 비회원UV · 첫구매객수 ÷ 구매고객수 · 첫구매거래액 ÷ 총결제거래액 · 신규고객수 ÷ 구매고객수 · 신규거래액 ÷ 순결제거래액 · 비회원UV ÷ UV. 광고비 · UV · 순결제거래액은 분모가 없어 증감만</li>
       <li>"개선 없음" ≠ "유지": 계절요일보정을 못 넘으면 "계절요일보정 대비 -x%", 비중이 내려가면 악화로 판정</li>
       <li>첫구매 고객은 정의상 기존 고객이 아니므로 비중 하락의 원인으로 '앱 이용자 누적'을 쓰지 않는다. 구성 효과(브랜드/기획전 · 캠페인 · 이벤트)를 먼저 분해한 뒤 남는 내부 효과만 트래킹 이슈로 해석</li>
       <li>모든 비교는 일평균, 기간 일수 · 요일 구성 명시 · PAYCO/토스 프로모션 같은 이벤트성 스파이크는 분리해서 본다</li></ul></div></section>`;
@@ -1972,7 +2024,8 @@ document.addEventListener('click', e => {
   if (ds.sel != null) { S.drill.sel = ds.sel; render(true); const s = $id('drSelSec'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (t.id === 'drFold') { S.drill.open = []; render(true); return; }
   if (t.id === 'dgnEdit') { DGN_EDIT = true; render(true); const el = $id('dgnBody'); if (el) { document.execCommand('defaultParagraphSeparator', false, 'div'); el.focus(); } return; }
-  if (t.id === 'dgnCancel') { DGN_EDIT = false; render(true); return; }
+  if (t.id === 'dgnCancel') { DGN_EDIT = false; DGN_AI = ''; render(true); return; }
+  if (t.id === 'dgnGem') { gemAsk('diag'); return; }
   if (t.id === 'dgnSave') { dgnSave(); return; }
   if (t.id === 'dgnToggle') { DGN_AUTO = !DGN_AUTO; render(true); return; }
   if (t.id === 'dgnReset') { if (confirm('이 구간의 리뷰 편집본을 지우고 자동 리뷰로 되돌릴까요?')) { DGN.remove(dgnKey(dgDates())); DGN_AUTO = false; render(true); } return; }

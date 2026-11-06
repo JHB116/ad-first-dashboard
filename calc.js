@@ -9,7 +9,7 @@
   const TOTAL = '합계';
   const ROW_METS = ['cost', 'uv', 'uvn', 'join', 'fp', 'fpr', 'fpn', 'nb', 'nrev', 'buy', 'rev', 'wb', 'nrv'];
 
-  // 화면 지표(추이 · 첫구매 진단 카드 순서 — 8개 + 8개 + 첫구매객단가) — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1) · d: 카드에 쓰는 산식 설명
+  // 화면 지표(추이 · 첫구매 진단 카드 순서 — 8개 + 8개) — kind: money(원) · count(명) · cpa(원/명) · ratio(0~1) · d: 카드에 쓰는 산식 설명
   const METRICS = [
     { k: 'cost', n: '광고비', kind: 'money', base: ['cost'], f: s => s.cost },
     { k: 'join', n: '가입', kind: 'count', base: ['join'], f: s => s.join },
@@ -26,7 +26,6 @@
     { k: 'uvn', n: '비회원UV', kind: 'count', base: ['uvn'], f: s => s.uvn },
     { k: 'nrv', n: '순결제거래액', kind: 'money', base: ['nrv'], f: s => s.nrv },
     { k: 'roas', n: '순결제ROAS', d: '순결제거래액 ÷ 광고비', kind: 'ratio', base: ['nrv', 'cost'], f: s => div(s.nrv, s.cost) },
-    { k: 'buy', n: '구매고객수', kind: 'count', base: ['buy'], f: s => s.buy },
     { k: 'fpa', n: '첫구매객단가', d: '첫구매거래액 ÷ 첫구매객수', kind: 'cpa', base: ['fpr', 'fp'], f: s => div(s.fpr, s.fp) },   // cpa 와 같은 원/명(만원 표기), 높을수록 좋음
   ];
   // 드릴다운 · 첫구매 진단(리뷰)에만 쓰는 보조 지표
@@ -34,6 +33,7 @@
     { k: 'fpu', n: 'UV 첫구매전환율', d: '첫구매객수 ÷ UV(전체)', kind: 'ratio', base: ['fp', 'uv'], f: s => div(s.fp, s.uv) },   // 비회원UV 가 없는 기간의 리뷰용
     { k: 'fpn', n: '첫구매(순결제)', kind: 'count', base: ['fpn'], f: s => s.fpn },
     { k: 'fps', n: '첫구매 비중', kind: 'ratio', base: ['fp', 'buy'], f: s => div(s.fp, s.buy) },   // 첫구매 ÷ 구매고객(총결제)
+    { k: 'buy', n: '구매고객수', kind: 'count', base: ['buy'], f: s => s.buy },   // 카드에서는 뺌 — 첫구매 비중 · 구성 효과 분모용
   ];
   const METRIC = Object.fromEntries([...METRICS, ...EXTRA].map(m => [m.k, m]));
 
