@@ -1029,7 +1029,7 @@ function memoSection() {
     <div class="ins-body">
       <div class="memo-h">
         <div class="seg" role="group" aria-label="메모 보기"><button type="button" data-memof="all" title="저장된 메모를 모두 보기">모든 메모</button><button type="button" data-memof="view" title="지금 화면의 기간 · 광고유형 · 비용출처와 같은 조건으로 붙인 메모만 보기">이 화면 조건</button></div>
-        <button class="btn primary" type="button" id="btnMemoAdd" title="지금 보고 있는 기간 · 필터에 메모 붙이기">+ 메모</button>
+        <span id="memoGemHd"></span><button class="btn primary" type="button" id="btnMemoAdd" title="지금 보고 있는 기간 · 필터에 메모 붙이기">+ 메모</button>
       </div>
       <div class="memos" id="memoList"></div>
     </div></details></section>`;
@@ -1038,6 +1038,7 @@ function renderMemos() {
   if (!$id('memoSec')) return;
   const all = MEMOS.all().sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')));
   const here = all.filter(m => memoMatch(m.view)), list = MEMO_FILTER === 'view' ? here : all;
+  gemHeader();
   document.querySelectorAll('[data-memof]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.memof === MEMO_FILTER)));
   $id('memoDesc').textContent = all.length
     ? `${all.length}개 · 지금 보기에 붙은 메모 ${here.length}개 · 📌 를 누르면 그 기간 · 필터로 이동 · 이 브라우저에 저장되고 백업 파일에 함께 담김`
@@ -1102,6 +1103,10 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#memoSec')) return;
   const f = e.target.closest('[data-memof]');
   if (f) { MEMO_FILTER = f.dataset.memof; renderMemos(); return; }
+  if (e.target.closest('[data-memogemhd]')) {   // 위쪽 버튼: 편집 중이 아니면 새 메모를 열고 바로 초안 요청
+    if (!MEMO_EDIT) { MEMO_EDIT = 'new'; MEMO_DRAFT = { html: '', html2: '', color: 'yellow', grain: S.grain, at: S.at || '' }; MEMO_PANE = 'a'; renderMemos(); }
+    gemAsk(); return;
+  }
   if (e.target.closest('#btnMemoAdd')) { MEMO_EDIT = 'new'; MEMO_DRAFT = { html: '', html2: '', color: 'yellow', grain: S.grain, at: S.at || '' }; MEMO_PANE = 'a'; MEMO_FOCUS = true; renderMemos(); return; }
   const cmd = e.target.closest('[data-memocmd],[data-memoink],[data-memohl]');
   if (cmd) {
@@ -1170,13 +1175,16 @@ document.addEventListener('keydown', e => {
 // 받은 초안은 편집 중인 메모의 리뷰 칸에 넣는다(칸에 글이 있으면 그 아래에 덧붙임). 저장해야 남는다.
 const gem = () => window.AD_GEMINI || null;
 let GEM_WAIT = '';
-function gemBtn() {
+function gemBtn(hd) {
   const g = gem();
   if (!g) return '';
   const tip = g.ready ? '지금 화면(실적 요약 · 광고유형별 · 흐름)의 숫자만 Gemini 에 보내 리뷰 초안을 받아 리뷰 칸에 넣습니다. 원천 데이터는 보내지 않습니다. 확인 · 수정 후 저장하세요.'
     : 'Streamlit Cloud → 앱 Settings → Secrets 에 GEMINI_API_KEY 를 넣으면 쓸 수 있습니다.';
-  return `<button class="btn" type="button" data-memogem${g.ready && !GEM_WAIT ? '' : ' disabled'} title="${esc(tip)}">${GEM_WAIT ? 'Gemini 가 쓰는 중…' : '✨ Gemini 리뷰 초안'}</button>`;
+  return `<button class="btn" type="button" ${hd ? 'data-memogemhd' : 'data-memogem'}${g.ready && !GEM_WAIT ? '' : ' disabled'} title="${esc(hd ? tip + ' (편집 중이 아니면 새 메모를 열어 넣습니다)' : tip)}">${GEM_WAIT ? 'Gemini 가 쓰는 중…' : '✨ Gemini 리뷰 초안'}</button>`;
 }
+// 메모 위쪽(+ 메모 옆) 버튼 — Streamlit 연결 상태가 늦게 와도 이 자리만 다시 그린다
+function gemHeader() { const el = $id('memoGemHd'); if (el) el.innerHTML = gemBtn(true); }
+window.AD_GEMINI_STATUS = () => gemHeader();
 // 근거(facts) — 화면과 같은 산식 · 표기(C.fmt · fmtD). 기간 · 비교 · 일평균/누계 · 유형 · 필터를 함께 적는다
 function memoFacts() {
   if (!R || S.page !== 'trend') return '';
@@ -1237,7 +1245,7 @@ function gemAsk() {
 window.AD_GEMINI_RECEIVE = r => {
   if (!r || !r.id || r.id !== GEM_WAIT) return;
   GEM_WAIT = '';
-  if (!MEMO_EDIT) return;   // 그사이 편집을 닫음
+  if (!MEMO_EDIT) { gemHeader(); return; }   // 그사이 편집을 닫음
   memoSyncDraft();
   if (r.ok && r.text) {
     const html = String(r.text).replace(/\r/g, '').split('\n').map(l => `<div>${l.trim() ? esc(l) : '<br>'}</div>`).join('');
