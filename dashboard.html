@@ -1209,7 +1209,7 @@ function diagFacts() {
   const box = document.createElement('div'); box.innerHTML = auto;
   L.push('[참고 — 자동 리뷰: 계절요일보정 대비 요인 분해 · 매체별 증감(최근 − 계절요일보정, 일평균 백만원)]');
   for (const el of box.children) { const t = (el.textContent || '').replace(/\s+/g, ' ').trim(); if (t) L.push(t); }
-  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · ') + ' (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)');
+  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · '));
   return L.join('\n');
 }
 // Gemini 글 → 진단 리뷰 줄 모양(□ 제목 · ㄴ 하위 · > 결론)
@@ -1280,7 +1280,9 @@ function fprMix(list) {
   const dec = C.mixDecompose(items), C0 = dec.O0, C1 = dec.O1;
   if (!(C0 > 0) || !(C1 > 0) || dec.R0 == null) return null;
   // 출발 광고비가 0 인 항목(새 캠페인 등)은 믹스에서 평균 효율로 보고, 실제 효율 차이는 효율 쪽에 둔다 — 셋의 합은 늘 전체 증감
-  const rows = dec.rows.map(r => ({ name: r.name, w0: r.w0, w1: r.w1, e0: r.r0, e1: r.r1, m: C1 * (r.w1 - r.w0) * ((r.r0 ?? dec.R0) - dec.R0) }));
+  // 광고비 비중이 두 기간 모두 0.5% 미만인 항목은 첫구매ROAS 가 극단값(수만 %)이 되기 쉬워 믹스에서 평균 효율로 본다(효과는 효율 쪽)
+  const tinyW = r => r.w0 < 0.005 && r.w1 < 0.005;
+  const rows = dec.rows.map(r => ({ name: r.name, w0: r.w0, w1: r.w1, e0: r.r0, e1: r.r1, m: tinyW(r) ? 0 : C1 * (r.w1 - r.w0) * ((r.r0 ?? dec.R0) - dec.R0) }));
   const scale = (C1 - C0) * dec.R0, mix = rows.reduce((a, r) => a + r.m, 0), eff = (dec.F1 - dec.F0) - scale - mix;
   return { C0, C1, E0: dec.R0, E1: dec.R1, scale, mix, eff, rows };
 }
@@ -1288,7 +1290,7 @@ const roasTxt = v => (v == null || !isFinite(v) ? '–' : `${(v * 100).toFixed(0
 // 믹스 크기 = |믹스| ÷ (|규모| + |믹스| + |효율|) — 셋이 서로 상쇄할 때 '증감의 수백 %'가 되지 않게 움직임 전체 대비로
 const mixShare = M => { const g = Math.abs(M.scale) + Math.abs(M.mix) + Math.abs(M.eff); return g ? Math.abs(M.mix) / g * 100 : 0; };
 const MIX_BIG = 25;   // 움직임의 25% 이상이면 '믹스 영향 큼'
-function fprMixLines(M, T, label, L, short) {
+function fprMixLines(M, T, label, L, short, unit = '캠페인') {
   if (!M || T.d == null || !T.d) return;
   const ms = mixShare(M), big = ms >= MIX_BIG && Math.abs(M.mix) >= 5e4;
   const parts = `규모 ${mDelta(M.scale)} · 믹스 ${mDelta(M.mix)} · 효율 ${mDelta(M.eff)}`;
@@ -1296,7 +1298,7 @@ function fprMixLines(M, T, label, L, short) {
     if (!big) return;
     const top = [...M.rows].filter(r => Math.abs(r.m) >= 5e3).sort((a, b) => Math.abs(b.m) - Math.abs(a.m)).slice(0, 2);
     if (!top.length) return;
-    L.push(`  ㄴ ${label} 안 캠페인 믹스 ${mDelta(M.mix)}(${parts}, 움직임의 ${ms.toFixed(0)}%): ${top.map(r => `${r.name} 광고비 비중 ${(r.w0 * 100).toFixed(0)}%→${(r.w1 * 100).toFixed(0)}%(첫구매ROAS ${roasTxt(r.e0)}, 평균 ${roasTxt(M.E0)}) ${mDelta(r.m)}`).join(' / ')}`);
+    L.push(`  ㄴ ${label} 안 ${unit} 믹스 ${mDelta(M.mix)}(${parts}, 움직임의 ${ms.toFixed(0)}%): ${top.map(r => `${r.name} 광고비 비중 ${(r.w0 * 100).toFixed(0)}%→${(r.w1 * 100).toFixed(0)}%(첫구매ROAS ${roasTxt(r.e0)}, 평균 ${roasTxt(M.E0)}) ${mDelta(r.m)}`).join(' / ')}`);
     return;
   }
   L.push(`[3) 믹스 효과 — 첫구매거래액 증감 ${mDelta(T.d)} = 광고비 규모 + ${label} 믹스(광고비 비중 이동) + ${label} 안 효율(첫구매ROAS = 첫구매거래액 ÷ 광고비). 셋을 더하면 전체 증감]`);
@@ -1346,19 +1348,37 @@ function fprReport(t, sp, T, ref, opt = {}) {
   const typeBlock = ({ n, x }) => {
     L.push(`• ${n.v}: 첫구매거래액 ${mDelta(x.d)} (${spct(x.p)} · 기여 ${shareTxt(x)})${path(x)}${fprMainTxt(x) ? ' · ' + fprMainTxt(x) : ''}`);
     if (DETAIL_SKIP.has(n.v)) { L.push('  ㄴ 캠페인 분석 제외(리포트에 분석할 만한 데이터 없음)'); return; }
-    const ks = [...t.nodes.values()].filter(m => m.level === leaf && m.key.startsWith(n.key + '|')).map(m => ({ m, name: nm(m), y: sp(m) }));
-    const mv = ks.filter(o => o.y.d != null && Math.abs(o.y.d) >= 5e3), dir = Math.sign(x.d);
+    // 유형별 다른 상세 기준(opt.alt[유형]) — 사이트검색광고는 사이트검색 리포트의 보고 그룹
+    const alt = opt.alt && opt.alt[n.v];
+    if (alt && alt.note) L.push(`  ㄴ [${alt.label} 기준 — ${alt.note}]`);
+    const ks = alt
+      ? alt.nodes.map(m => ({ m, name: blank(m.v) ? `${alt.label} 없음(-)` : m.v, y: alt.sp(m), noName: blank(m.v) }))
+      : [...t.nodes.values()].filter(m => m.level === leaf && m.key.startsWith(n.key + '|')).map(m => ({ m, name: nm(m), y: sp(m), noName: blank(m.v) }));
+    const unit = alt ? alt.label : '캠페인';
+    const pd = alt ? ks.reduce((a, o) => a + (o.y.d || 0), 0) : x.d;   // 유형 안 기여의 분모(상세 기준의 증감 합)
+    const mv = ks.filter(o => o.y.d != null && Math.abs(o.y.d) >= 5e3), dir = Math.sign(alt ? pd || x.d : x.d);
     const sameK = mv.filter(o => Math.sign(o.y.d) === dir).sort((a, b) => dir * (b.y.d - a.y.d)).slice(0, 3);
     const oppK = mv.filter(o => Math.sign(o.y.d) === -dir).sort((a, b) => dir * (a.y.d - b.y.d)).slice(0, 1);
-    for (const o of [...sameK, ...oppK]) L.push(`  ㄴ ${Math.sign(o.y.d) === dir ? '' : '(반대) '}${o.name}${blank(o.m.v) ? '[캠페인명 없이 집계된 행 — 이름 붙이는 방식이 바뀐 영향일 수 있음]' : ''}: ${mDelta(o.y.d)} (${pctTxt(o.y)} · 유형 안 기여 ${x.d ? Math.abs(o.y.d / x.d * 100).toFixed(0) : '–'}%)${path(o.y)}${fprMainTxt(o.y) ? ' · ' + fprMainTxt(o.y) : ''}${flowTxt(o.m)}`);
-    if (!mv.length) L.push('  ㄴ 캠페인 단위로 큰 변화 없음');
-    fprMixLines(fprMix(ks.map(o => ({ name: o.name, x: o.y }))), x, n.v, L, true);
+    for (const o of [...sameK, ...oppK]) L.push(`  ㄴ ${Math.sign(o.y.d) === dir ? '' : '(반대) '}${o.name}${o.noName ? `[${unit}명 없이 집계된 행 — ${alt ? '리포트가 없는 날짜의 값일 수 있음' : '이름 붙이는 방식이 바뀐 영향일 수 있음'}]` : ''}: ${mDelta(o.y.d)} (${pctTxt(o.y)} · 유형 안 기여 ${pd ? Math.abs(o.y.d / pd * 100).toFixed(0) : '–'}%)${path(o.y)}${fprMainTxt(o.y) ? ' · ' + fprMainTxt(o.y) : ''}${flowTxt(o.m)}`);
+    if (!mv.length) L.push(`  ㄴ ${unit} 단위로 큰 변화 없음`);
+    fprMixLines(fprMix(ks.map(o => ({ name: o.name, x: o.y }))), alt ? { ...x, d: pd } : x, n.v, L, true, unit);
   };
-  L.push(`[2) 광고유형별 — 첫구매거래액 증감(${mUnit()}, ${ref.label}). ${byGroup ? `기여 = 감소 유형은 감소 합 ${mDelta(sumDown)}, 증가 유형은 증가 합 ${mDelta(sumUp)} 대비(각 묶음 합 100% — 감소 · 증가가 서로 상쇄돼 순증감 ${mDelta(sumD)}이 작음)` : `기여 = 그 유형 증감 ÷ 유형 증감 합 ${mDelta(sumD)}`} (부호 없이, 감소 · 증가 묶음으로 방향 구분). 'ㄴ' = 그 유형 안 캠페인 상세${gapD}]`);
+  L.push(`[2) 광고유형별 — 첫구매거래액 증감(${mUnit()}, ${ref.label}). ${byGroup ? `기여 = 감소 유형은 감소 합 ${mDelta(sumDown)}, 증가 유형은 증가 합 ${mDelta(sumUp)} 대비(각 묶음 합 100% — 감소 · 증가가 서로 상쇄돼 순증감 ${mDelta(sumD)}이 작음)` : `기여 = 그 유형 증감 ÷ 유형 증감 합 ${mDelta(sumD)}`} (부호 없이, 감소 · 증가 묶음으로 방향 구분). 'ㄴ' = 그 유형 안 캠페인 상세(사이트검색광고는 보고 그룹)${gapD}]`);
   L.push('1) 감소'); if (down.length) down.forEach(typeBlock); else L.push('• 없음');
   L.push('2) 증가'); if (up.length) up.forEach(typeBlock); else L.push('• 없음');
   fprMixLines(fprMix(all.map(o => ({ name: o.name, x: o.x }))), TT, '광고유형', L, false);
   return L;
+}
+// 사이트검색광고 보고 그룹 트리 — 리포트 데이터(rgrp)가 있고 사이트검색광고가 선택돼 있을 때만
+const SITE_TYPE = '사이트검색광고';
+const siteDateSet = () => (cache.siteSet || (cache.siteSet = new Set((P && P.row && P.row.siteDates) || [])));
+const siteRange = () => { const d = (P && P.row && P.row.siteDates) || []; return [d[0], d[d.length - 1]]; };
+const siteCover = idx => { const ss = siteDateSet(); if (!idx || !idx.length || !ss.size) return 0; return idx.filter(i => ss.has(R.dates[i])).length / idx.length; };
+function siteGroupTree(types, where, sets) {
+  if (!R.dims.rgrp || !types.includes(SITE_TYPE) || !siteDateSet().size) return null;
+  const st = C.tree(R, { where: { ...where, t: new Set([SITE_TYPE]) }, dims: ['rgrp'], sets, mets: FPR_BASE });
+  st.nodes = [...st.nodes.values()];
+  return st;
 }
 const fprDims = () => ['t', 'md', ...(R.dims.camp ? ['camp'] : [])];
 // 메모(추이) — 실적 vs 비교 기간, 화면과 같은 기간 · 필터 · 일평균/누계
@@ -1369,8 +1389,17 @@ function fprFacts(X, types) {
   const t = C.tree(R, { where: { ...(srcWhere() || {}), t: new Set(types) }, dims, sets: [X.prev, X.cur, ...prevP.map(q => q.idx)], mets: FPR_BASE });
   t.dims = dims;
   const [dp, dc] = t.days, sp = n => fprSplit(n.s[0], n.s[1], dp, dc);
+  const sets = [X.prev, X.cur, ...prevP.map(q => q.idx)], alt = {};
+  // 사이트검색광고 상세 = 보고 그룹(사이트검색 리포트). 리포트가 비교 기간을 덮지 못하면(전년 등) 직전 기간 대비로 비교
+  const st = siteGroupTree(types, srcWhere() || {}, sets);
+  if (st) {
+    const cov = siteCover(X.prev), last = prevP.length ? prevP.length + 1 : -1;
+    if (cov >= 0.9) alt[SITE_TYPE] = { label: '보고 그룹', nodes: st.nodes, sp: m => fprSplit(m.s[0], m.s[1], st.days[0], st.days[1]) };
+    else if (last > 1 && siteCover(sets[last]) >= 0.9) alt[SITE_TYPE] = { label: '보고 그룹', nodes: st.nodes, sp: m => fprSplit(m.s[last], m.s[1], st.days[last], st.days[1]),
+      note: `사이트검색 리포트가 ${ymd(siteRange()[0])}부터라 ${X.name}과 비교할 수 없어, 보고 그룹은 직전 기간(${prevP[prevP.length - 1].label}) 대비 증감 — 유형 합계 줄(${X.label})과 기준이 다름` };
+  }
   return fprReport(t, sp, fprSplit(t.total[0], t.total[1], dp, dc), { name: X.name, label: X.label },
-    { flow: prevP.map((q, i) => ({ label: q.label, k: i + 2 })) });
+    { flow: prevP.map((q, i) => ({ label: q.label, k: i + 2 })), alt });
 }
 // 첫구매 진단 — 최근 vs 계절요일보정(없으면 베이스라인), 일평균. 비교 연도 실적이 없는 항목은 위 단계의 계절 배수(* 표시)
 function fprDiagFacts(rg) {
@@ -1389,8 +1418,16 @@ function fprDiagFacts(rg) {
   };
   const conv = rows => fprSplitRows(Object.fromEntries(keys.map(k => { const r = rows[k]; return [k, { cur: r.recent, ref: useEx ? r.ex : r.base, base: useEx ? r.base : undefined, filled: !!r.filled }]; })));
   const ref = useEx ? { name: exName(totRows.fpr), label: `${exName(totRows.fpr)} 대비` } : { name: '베이스라인', label: '베이스라인 대비' };
+  // 사이트검색광고 상세 = 보고 그룹. 베이스라인 · 최근이 리포트 날짜 안이어야 함. 비교 연도엔 리포트가 없으므로 기대치는 사이트검색광고의 계절 배수(*)
+  const alt = {}, st = siteGroupTree(selTypes(), dgWhere(), es.sets);
+  const siteNode = [...t.nodes.values()].find(m => m.level === 0 && m.v === SITE_TYPE);
+  if (st && siteNode && siteCover(rg.base) >= 0.9 && siteCover(rg.recent) >= 0.9) {
+    const PR = rowsFor(siteNode);
+    alt[SITE_TYPE] = { label: '보고 그룹', nodes: st.nodes, sp: m => conv(Object.fromEntries(keys.map(k => [k, exFill(C.expectRow(C.METRIC[k], m.s, st.days, es), PR[k])]))),
+      note: siteCover(rg.refBase) >= 0.9 ? '' : `비교 연도엔 사이트검색 리포트가 없어 보고 그룹의 ${ref.name}은 사이트검색광고 전체의 계절 배수로 추정(*)` };
+  }
   FPR_MODE = 'avg';
-  try { return fprReport(t, n => conv(rowsFor(n)), conv(totRows), ref); } finally { FPR_MODE = null; }
+  try { return fprReport(t, n => conv(rowsFor(n)), conv(totRows), ref, { alt }); } finally { FPR_MODE = null; }
 }
 // 근거(facts) — 화면과 같은 산식 · 표기(C.fmt · fmtD). 기간 · 비교 · 일평균/누계 · 유형 · 필터를 함께 적는다
 function memoFacts() {
@@ -1431,7 +1468,7 @@ function memoFacts() {
         .map(m => { const a = val(m, T, q.idx[y0]); return `${m.n} ${vf(m, a)}(${fmtD(a, val(m, T, q.idx[y1])).t})`; }).join(', '));
     }
   }
-  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · ') + ' (라스트클릭 AF코드 트래킹 — 앱 결제로 넘어가면 광고 귀속이 끊길 수 있음)');
+  if (C.EVENTS && C.EVENTS.length) L.push('[이벤트] ' + C.EVENTS.map(ev => `${ev.date} ${ev.label}`).join(' · '));
   return L.join('\n');
 }
 function gemAsk(kind = 'memo') {

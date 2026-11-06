@@ -106,3 +106,10 @@ def test_network_errors_become_gemini_error(monkeypatch):
     monkeypatch.setattr(gm, 'urlopen', lambda *a, **k: R())
     with pytest.raises(gm.GeminiError):
         gm.write_memo('x', 'K', model='m1')
+
+
+def test_no_tracking_check():
+    """확인 줄에 매번 나오던 AF코드 · 트래킹 얘기를 막는 규칙, 사이트검색광고는 보고 그룹"""
+    for p in gm.PROMPTS.values():
+        assert 'AF코드' in p and '쓰지 마라' in p and '보고 그룹' in p
+        assert '트래킹 이슈(' not in p
