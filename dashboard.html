@@ -383,7 +383,7 @@ const C = window.AdCalc;
 const $id = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = { '브랜드검색광고': '--c1', '사이트검색광고': '--c2', '쇼핑검색광고': '--c3', 'DA': '--c4', 'DA(페이먼츠)': '--c5', '메시지': '--c6', 'PA': '--c7', '합계': '--ink' };
-const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용출처', camp: '캠페인', sub: '하위캠페인', bp: '브랜드/기획전', dev: '디바이스', dept: '부서', rcamp: '보고 캠페인', rgrp: '보고 그룹', cat: '카테고리', kind: '구분(소재)' };
+const DIM_NAME = { t: '광고유형', ch: '채널', md: '매체', src: '비용출처', camp: '캠페인', sub: '하위캠페인', bp: '브랜드/기획전', dev: '디바이스', dept: 'BPU', rcamp: '보고 캠페인', rgrp: '보고 그룹', cat: '카테고리', kind: '구분(소재)' };
 const RANGES = { month: [['all', '전체'], [13, '13개월'], [25, '25개월']], week: [[8, '8주'], [13, '13주'], [26, '26주'], [53, '53주']], day: [[14, '14일'], [30, '30일'], [60, '60일'], [90, '90일']] };
 const STORE_KEY = 'ad-new-dashboard-v1';
 const DEF = {
