@@ -390,7 +390,7 @@ const DEF = {
   page: 'trend', grain: 'month', mode: 'avg', cmp: 'yoy', view: 'split', viewV: 4, custom: { c0: '', c1: '', p0: '', p1: '' }, trType: '합계', trMetric: 'fp', trScale: 'own', yearHide: [], at: '', range: { month: 'all', week: 26, day: 60 },
   types: null, srcs: null, hidden: {}, filtOpen: false, layout: 'stack',
   drill: { type: '', dims: ['md', 'src', 'camp', 'sub'], open: [], sel: '', q: '', hideSmall: true, sort: 'default' },
-  diag: { b0: '2026-07-01', b1: '', r0: '', r1: '', refY: 2025, mets: ['fpr', 'nrev'], compMet: 'fpr', dims: ['t', 'md', 'bp', 'camp'], open: [], compType: '브랜드검색광고', compDim: 'bp' },
+  diag: { b0: '2026-07-01', b1: '', r0: '', r1: '', refY: 2025, mets: ['fpr', 'nrev'], compMet: 'fpr', dims: ['t', 'md', 'bp', 'camp'], open: [], sort: 'default', compType: '브랜드검색광고', compDim: 'bp' },
 };
 let S = load();
 if ((S.viewV || 0) < 2) S.view = 'split';                 // 유형별을 기본으로 바꾼 뒤 한 번만 — 이후엔 고른 보기를 기억
@@ -1989,7 +1989,7 @@ function renderDiag(main) {
   if (!F.dims.length) F.dims = ['t', 'md', 'camp'];
   const dimSel = L => `<select data-dgdim="${L}" aria-label="${L + 1}단계">${L > 0 ? '<option value="">(없음)</option>' : ''}${avail.map(k => `<option value="${k}"${F.dims[L] === k ? ' selected' : ''}>${DIM_NAME[k]}</option>`).join('')}</select>`;
   h += `<section><div class="sec-h"><h2>드릴다운 · 베이스라인 vs 최근</h2><span class="desc">일평균 · 계절요일보정은 위와 같은 방식으로 항목마다 계산</span><div class="tools"><button class="lnk" id="dgFold" type="button">모두 접기</button><button class="btn" data-csv-for="dgTree" data-name="첫구매진단_드릴다운">CSV</button></div></div>
-    <div class="card pad" style="margin-bottom:12px"><span class="field">단계 ${[0, 1, 2, 3].map(dimSel).join(' › ')}</span> <span class="hint">디바이스를 넣으면 APP 결제 쪽 변화를 따로 볼 수 있다</span>
+    <div class="card pad" style="margin-bottom:12px"><span class="field">단계 ${[0, 1, 2, 3].map(dimSel).join(' › ')}</span> <label class="field">정렬 ${dgSortSel(F.sort)}</label>
       <div class="tr-pick" style="margin:10px 0 0"><span class="hint">표 지표</span><div class="seg" role="group" aria-label="표 지표">${DG_METS.map(k => `<button type="button" data-dgmet="${k}" aria-pressed="${mets.includes(k)}">${esc(C.METRIC[k].n)}</button>`).join('')}</div></div></div>
     <div class="card tbl-wrap"><table class="grid" id="dgTree"></table></div>${FILL_NOTE}</section>`;
 
@@ -2025,24 +2025,43 @@ function renderDiag(main) {
   renderDgTree(rg, mets);
   renderDgComp(rg, CM);
 }
+// 드릴다운 정렬 — 기본: 광고유형 단계는 정해진 유형 순서(C.TYPES), 그 외 단계는 정렬 지표 크기 순.
+//  'r:지표' = 최근 일평균 큰 순(낮을수록 좋은 지표는 작은 순), 'x:지표' = 계절요일보정 대비 증감률 큰 순(낮을수록 좋은 지표는 작은 순)
+function dgSortSel(cur) {
+  const o = (v, l) => `<option value="${v}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
+  return `<select id="dgSort" aria-label="드릴다운 정렬">${o('default', '기본')}`
+    + `<optgroup label="최근 값">${DG_METS.map(k => o('r:' + k, C.METRIC[k].n)).join('')}</optgroup>`
+    + `<optgroup label="계절요일보정 대비">${DG_METS.map(k => o('x:' + k, C.METRIC[k].n + ' 대비')).join('')}</optgroup></select>`;
+}
 function renderDgTree(rg, mets) {
   const F = S.diag, dims = F.dims, es = C.expSets(R, rg);
   // 정렬 기준 = 고른 지표 중 첫 합계형(명 · 금액) 지표, 없으면 첫구매
   const sk = mets.find(k => C.METRIC[k].kind === 'count' || C.METRIC[k].kind === 'money') || 'fp';
-  const base = [...new Set([...mets, sk].flatMap(k => C.METRIC[k].base))], sm = C.METRIC[sk].base[0];
+  const [sMode, sKey] = /^[rx]:/.test(F.sort || '') && C.METRIC[F.sort.slice(2)] ? [F.sort[0], F.sort.slice(2)] : ['default', null];
+  const base = [...new Set([...mets, sk, ...(sKey ? [sKey] : [])].flatMap(k => C.METRIC[k].base))], sm = C.METRIC[sk].base[0];
   const t = C.tree(R, { where: dgWhere(), dims, sets: es.sets, mets: base });
   const d = t.days, open = new Set(F.open);
   // 행마다 지표별 값 — 비교 연도 실적이 없는 항목은 바로 위 단계(P)의 계절 배수
-  const rowsOf = (s, P) => Object.fromEntries(mets.map(k => [k, exFill(C.expectRow(C.METRIC[k], s, d, es), P && P[k])]));
+  const rk = sKey && !mets.includes(sKey) ? [...mets, sKey] : mets;   // 정렬 지표도 계절 배수 채우기용으로 함께
+  const rowsOf = (s, P) => Object.fromEntries(rk.map(k => [k, exFill(C.expectRow(C.METRIC[k], s, d, es), P && P[k])]));
   const cells = rs => mets.map(k => {
     const M = C.METRIC[k], r = rs[k], lb = M.lowerBetter;
     return `<td class="bl">${dgFmt(M.kind, r.base)}</td>${exCell(M.kind, r)}<td class="cur">${dgFmt(M.kind, r.recent)}</td><td class="${clsP(r.chg, lb)}">${sgn(r.chg)}</td><td class="${clsP(r.vsEx, lb)}">${sgn(r.vsEx)}</td>`;
   }).join('');
   const TOT = rowsOf(t.total, null);
   const size = n => Math.abs(n.s[0][sm] / (d[0] || 1)) + Math.abs(n.s[1][sm] / (d[1] || 1));
+  const typeRank = n => { const r = C.TYPES.indexOf(n.v); return r < 0 ? 99 : r; };
+  // 지표 정렬 값 — 없으면 맨 아래. 'x:' 는 행과 같은 방식(exFill)으로 계절요일보정 대비
+  const sortV = P => n => { const M = C.METRIC[sKey], e = exFill(C.expectRow(M, n.s, d, es), P && P[sKey]), v = sMode === 'x' ? e.vsEx : e.recent;
+    return v == null || !isFinite(v) ? -Infinity : (M.lowerBetter ? -v : v); };
+  const sortFn = P => {
+    if (sMode === 'default') return (a, b) => (a.dim === 't' ? typeRank(a) - typeRank(b) : (size(b) || 0) - (size(a) || 0));
+    const sv = sortV(P), cache = new Map(), g = n => (cache.has(n.key) ? cache.get(n.key) : (cache.set(n.key, sv(n)), cache.get(n.key)));
+    return (a, b) => g(b) - g(a);
+  };
   let body = '';
   const walk = (pk, L, P) => {
-    const kids = C.children(t, pk, L).filter(n => base.some(m => n.s[0][m] || n.s[1][m])).sort((a, b) => (size(b) || 0) - (size(a) || 0));
+    const kids = C.children(t, pk, L).filter(n => base.some(m => n.s[0][m] || n.s[1][m])).sort(sortFn(P));
     for (const n of kids) {
       const can = L < dims.length - 1, isO = can && open.has(n.key), rs = rowsOf(n.s, P);
       body += `<tr><td style="padding-left:${10 + L * 18}px" data-csv="${esc('  '.repeat(L) + n.v)}">${can ? `<button class="tw" data-dgtw="${esc(n.key)}" aria-expanded="${isO}">${isO ? '▾' : '▸'}</button>` : '<span class="tw"></span>'}<span class="lv">${DIM_NAME[n.dim]}</span>${esc(n.v)}</td>${cells(rs)}</tr>`;
@@ -2237,7 +2256,7 @@ document.addEventListener('click', e => {
   if (ds.dgtw != null) { const o = new Set(S.diag.open); o.has(ds.dgtw) ? o.delete(ds.dgtw) : o.add(ds.dgtw); S.diag.open = [...o]; render(true); return; }
   if (t.id === 'dgFold') { S.diag.open = []; render(true); return; }
   if (t.id === 'cuReset') { S.custom = { c0: '', c1: '', p0: '', p1: '' }; render(true); return; }
-  if (t.id === 'dgReset') { const keep = { dims: S.diag.dims, compType: S.diag.compType, compDim: S.diag.compDim, mets: S.diag.mets, compMet: S.diag.compMet }; S.diag = { ...structuredClone(DEF.diag), ...keep }; render(true); return; }
+  if (t.id === 'dgReset') { const keep = { dims: S.diag.dims, compType: S.diag.compType, compDim: S.diag.compDim, mets: S.diag.mets, compMet: S.diag.compMet, sort: S.diag.sort }; S.diag = { ...structuredClone(DEF.diag), ...keep }; render(true); return; }
 });
 document.addEventListener('change', e => {
   const t = e.target;
@@ -2252,6 +2271,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'drSort') { S.drill.sort = t.value; render(true); }
   else if (['dgB0', 'dgB1', 'dgR0', 'dgR1'].includes(t.id)) { if (t.value) { S.diag[t.id.slice(2).toLowerCase()] = t.value; render(true); } }
   else if (t.id === 'dgRefY') { S.diag.refY = +t.value; render(true); }
+  else if (t.id === 'dgSort') { S.diag.sort = t.value; render(true); }
   else if (t.dataset.dgdim != null) { const L = +t.dataset.dgdim, d = S.diag.dims.slice(); if (t.value) d[L] = t.value; else d.length = L; S.diag.dims = d.filter((x, i) => x && d.indexOf(x) === i); S.diag.open = []; render(true); }
   else if (t.id === 'dgCompMet') { S.diag.compMet = t.value; render(true); }
   else if (t.id === 'dgCompType') { S.diag.compType = t.value; render(true); }
