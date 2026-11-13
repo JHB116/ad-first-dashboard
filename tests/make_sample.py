@@ -38,7 +38,7 @@ METS = ['지표_광고비', '지표_UV(전체)', '지표_가입회원', '지표_
         '지표_총결제고객수', '지표_총결제거래액', '지표_총결제고객수(윈백)', '지표_순결제거래액',
         '지표_비회원UV']   # 비회원UV 는 다른 이름(별칭)으로 — build_data.ROW_ALIASES 검증
 COLS = ['Source.Name', '기간_월', '기간_일자', '구분_AF코드', '구분_광고유형', '구분_채널', '구분_매체명', '구분_비용출처',
-        '구분_캠페인', '구분_하위캠페인', '구분_브랜드/기획전', '구분_디바이스', *METS]
+        '구분_캠페인', '구분_하위캠페인', '구분_브랜드/기획전', '구분_디바이스', *METS, '구분_부서명']   # 부서명은 맨 끝(행 인덱스 유지)
 
 
 def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source='sample.xlsx') -> pd.DataFrame:
@@ -56,13 +56,14 @@ def make_row(start='2025-01-01', end='2026-09-29', seed=7, scale_all=1.0, source
                 rows.append([source, f'{d.year}년{d.month:02d}월', serial, 'AF0', t, ch, md, src, camp, sub, bp, dev,
                              round(2_000_000 * scale), uv, int(rng.poisson(30 * scale)), fp,
                              fp * int(rng.integers(40_000, 90_000)), int(fp * .8), int(fp * .7), int(fp * .7) * 60_000,
-                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale)), (fp + other) * 63_000, int(uv * .6)])
+                             fp + other, (fp + other) * 70_000, int(rng.poisson(5 * scale)), (fp + other) * 63_000, int(uv * .6),
+                             '검색팀' if t == 'SA' else '제휴팀'])
         # 미분류 행 · 문자열 섞인 숫자 · 음수 조정분
-        r = [source, '', serial, '-', 'APP', '-', '-', '-', '-', '-', '-', '-', *zeros]
+        r = [source, '', serial, '-', 'APP', '-', '-', '-', '-', '-', '-', '-', *zeros, '-']
         r[14] = ' - '
         rows.append(r)
         if d.day == 1:
-            r = [source, '', serial, '-', 'DA', '포탈', '카카오', 'E영업', '서비스비용 조정', '-', '-', 'PC', *zeros]
+            r = [source, '', serial, '-', 'DA', '포탈', '카카오', 'E영업', '서비스비용 조정', '-', '-', 'PC', *zeros, '제휴팀']
             r[12], r[16] = -300_000, '########'
             rows.append(r)
     return pd.DataFrame(rows, columns=COLS)
@@ -104,7 +105,7 @@ def main(out: Path):
     add = make_row('2026-09-29', '2026-10-04', seed=11, scale_all=2.0, source='add.xlsx')
     add['지표_UV(회원)'] = add['지표_UV(전체)'] - add['지표_비회원UV']
     add.drop(columns=['지표_비회원UV']).to_pickle(out / 'sample_row_1001.pkl')
-    make_row('2024-01-01', '2024-12-31', seed=3, source='2024.xlsx').drop(columns=COLS_2024_MISSING).to_pickle(out / 'sample_row_2024.pkl')
+    make_row('2024-01-01', '2024-12-31', seed=3, source='2024.xlsx').drop(columns=[*COLS_2024_MISSING, '구분_부서명']).to_pickle(out / 'sample_row_2024.pkl')   # 부서명 없는 예전 원천
     make_site().to_pickle(out / 'sample_site.pkl')       # 사이트검색 리포트 9/1~10/4
     print('sample →', out)
 

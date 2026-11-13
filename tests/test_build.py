@@ -52,11 +52,12 @@ def test_row_totals_match_raw(sample, payload):
     for m in ['cost', 'join', 'fp', 'fpr', 'nb', 'nrev', 'fpn', 'buy', 'rev', 'wb', 'uv', 'uvn', 'nrv']:
         assert np.allclose(raw.groupby('t')[m].sum().sort_index(), got.groupby('t')[m].sum().sort_index(), atol=0.5), m
     # 차원별 합도 보존 (브랜드/기획전 · 디바이스)
-    for k in ['bp', 'dev', 'camp']:
+    for k in ['bp', 'dev', 'camp', 'dept']:
         assert np.allclose(raw.groupby(k)['cost'].sum().sort_index(), got.groupby(k)['cost'].sum().sort_index(), atol=0.5), k
     assert (got['cost'] < 0).any()                       # 음수 조정분 합산
     assert payload['row']['dims']['t'] == bd.TYPES       # 유형 순서 고정
     assert set(payload['row']['dims']['dev']) == {'PC', 'Mobile', 'APP'}
+    assert {'검색팀', '제휴팀'} <= set(payload['row']['dims']['dept'])   # 구분_부서명
 
 
 def test_row_source_info(payload):

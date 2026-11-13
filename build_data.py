@@ -5,7 +5,7 @@
     python build_data.py                                  # raw/ 폴더의 로우 파일 전부 → 백업
     python build_data.py --row a.xlsb b.csv               # 파일 직접 지정 (여러 개 가능)
     python build_data.py --base 기존백업.json.gz --row 1001.xlsb   # 기존 백업에 새 날짜 추가 · 같은 날짜 교체
-    python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 차원 빼고 가볍게
+    python build_data.py --lite                           # 하위캠페인 · 브랜드/기획전 · 디바이스 · 부서 차원 빼고 가볍게
 
 결과: backup/광고신규대시보드_백업_YYYYMMDD.json.gz (사이트검색 리포트만이면 광고신규대시보드_사이트검색_YYYYMMDD.json.gz,
 로우와 리포트를 같이 넣으면 ..._사이트검색포함.json.gz) → 대시보드에 끌어다 놓으면 저장된 데이터에 날짜 단위로 합쳐진다.
@@ -36,7 +36,7 @@ CACHE_DIR = ROOT / 'data' / 'cache'
 OUT_DIR = ROOT / 'backup'
 
 FORMAT = 'ad-new-dashboard-backup'
-BUILD_VERSION = '2026-10-23b 사이트검색 백업 이름 구분 · 사이트검색 리포트 · 비회원UV(회원UV 계산)'   # 빌드 로그 첫 줄 — PC 의 build_data.py 가 최신인지 확인용
+BUILD_VERSION = '2026-11-13 부서명 차원 · 2026-10-23b 사이트검색 백업 이름 구분 · 사이트검색 리포트 · 비회원UV(회원UV 계산)'   # 빌드 로그 첫 줄 — PC 의 build_data.py 가 최신인지 확인용
 VERSION = 1
 
 # ── 1-A. 로우 시트 ─────────────────────────────────────────────────────
@@ -51,13 +51,14 @@ ROW_DIMS = {
     '구분_하위캠페인': 'sub',
     '구분_브랜드/기획전': 'bp',
     '구분_디바이스': 'dev',
+    '구분_부서명': 'dept',
     # 아래는 사이트검색 리포트에만 있는 구분 (로우 행은 '-')
     '구분_보고_캠페인': 'rcamp',
     '구분_보고_그룹': 'rgrp',
     '구분_카테고리': 'cat',
     '구분_구분': 'kind',
 }
-LITE_DROP = ['sub', 'bp', 'dev', 'rcamp', 'rgrp', 'cat', 'kind']   # --lite 에서 빼는 차원
+LITE_DROP = ['sub', 'bp', 'dev', 'dept', 'rcamp', 'rgrp', 'cat', 'kind']   # --lite 에서 빼는 차원
 ROW_METRICS = {
     '지표_광고비': 'cost',
     '지표_UV(전체)': 'uv',
@@ -736,7 +737,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='광고 신규 실적 대시보드 백업 만들기')
     ap.add_argument('--row', type=Path, nargs='*', help='원천 파일들 — 로우 · 사이트검색 리포트 (기본: raw 폴더의 xlsb · csv · xlsx 전부, 수정시각 순)')
     ap.add_argument('--base', type=Path, help='이어 붙일 기존 백업(.json.gz)')
-    ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 차원 제외')
+    ap.add_argument('--lite', action='store_true', help='하위캠페인 · 브랜드/기획전 · 디바이스 · 부서 차원 제외')
     ap.add_argument('--out-stamp', help='파일명 날짜 (기본: 로우 최신일)')
     a = ap.parse_args(argv)
 
